@@ -1,0 +1,10 @@
+# 密钥：绝不提交
+.env
+.env.*
+!.env.example
+
+node_modules/
+.DS_Store
+Thumbs.db
+*.log
+.claude/

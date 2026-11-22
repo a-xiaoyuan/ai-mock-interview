@@ -1,0 +1,14 @@
+{
+  "name": "ai-mock-interview",
+  "version": "0.1.0",
+  "description": "技术岗 AI 模拟面试：按简历出题、层层追问、四维评分、复盘报告。支持任意 OpenAI 兼容模型。",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["interview", "mock-interview", "llm", "ai", "deepseek", "openai-compatible"],
+  "license": "MIT"
+}
