@@ -1,14 +1,39 @@
 {
   "name": "ai-mock-interview",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "private": true,
   "description": "技术岗 AI 模拟面试：按简历出题、层层追问、四维评分、复盘报告。支持任意 OpenAI 兼容模型。",
-  "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "dev": "concurrently -k -n api,web -c blue,magenta \"node --watch server.js\" \"vite\"",
+    "build": "tsc --noEmit && vite build",
+    "start": "node server.js",
+    "typecheck": "tsc --noEmit"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20.19"
   },
-  "keywords": ["interview", "mock-interview", "llm", "ai", "deepseek", "openai-compatible"],
-  "license": "MIT"
+  "keywords": [
+    "interview",
+    "mock-interview",
+    "llm",
+    "ai",
+    "deepseek",
+    "openai-compatible",
+    "react",
+    "vite"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "concurrently": "^10.0.7",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  }
 }

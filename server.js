@@ -1,5 +1,5 @@
-// AI 模拟面试原型 —— 零依赖 Node 服务（Node 18+）
-// 运行：node server.js   打开 http://localhost:3000
+// AI 模拟面试后端 —— 零依赖 Node 服务（Node 18+）
+// 开发：npm run dev（Vite 5173 + 本服务 3000）  生产：npm run build && npm start
 // 配置 .env（可选）：LLM_BASE_URL / LLM_API_KEY / LLM_MODEL / LLM_FAST_MODEL / PORT
 // 没有配置 LLM_API_KEY 时自动进入 mock 模式，可直接体验完整流程。
 
@@ -287,6 +287,38 @@ const routes = {
   },
 };
 
+// ---------- 静态文件（npm run build 生成的 dist/） ----------
+const DIST = path.join(__dirname, 'dist');
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.json': 'application/json; charset=utf-8',
+  '.woff2': 'font/woff2',
+};
+
+function serveStatic(url, res) {
+  const index = path.join(DIST, 'index.html');
+  if (!fs.existsSync(index)) {
+    res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' });
+    return res.end('前端还没有构建。请先运行 npm run build，或者用 npm run dev 启动开发模式（访问 http://localhost:5173）。');
+  }
+  let rel;
+  try { rel = decodeURIComponent(url.pathname); } catch { rel = '/'; }
+  let file = path.join(DIST, path.normalize(rel));
+  if (!file.startsWith(DIST + path.sep)) file = index; // 防止路径穿越
+  if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = index; // 前端路由回退
+  const hashed = file.startsWith(path.join(DIST, 'assets') + path.sep);
+  res.writeHead(200, {
+    'Content-Type': MIME[path.extname(file)] || 'application/octet-stream',
+    'Cache-Control': hashed ? 'public, max-age=31536000, immutable' : 'no-cache',
+  });
+  fs.createReadStream(file).pipe(res);
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let size = 0;
@@ -305,10 +337,7 @@ function readBody(req) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
-  if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    return fs.createReadStream(path.join(__dirname, 'public', 'index.html')).pipe(res);
-  }
+  if ((req.method === 'GET' || req.method === 'HEAD') && !url.pathname.startsWith('/api/')) return serveStatic(url, res);
   const handler = routes[`${req.method} ${url.pathname}`];
   if (!handler) { res.writeHead(404); return res.end('Not found'); }
   try {
@@ -328,6 +357,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(CFG.port, () => {
-  console.log(`AI 模拟面试原型已启动：http://localhost:${CFG.port}`);
+  console.log(`AI 模拟面试服务已启动：http://localhost:${CFG.port}`);
+  if (!fs.existsSync(path.join(DIST, 'index.html'))) console.log('（dist/ 不存在：开发请访问 Vite 的 http://localhost:5173，或先 npm run build）');
   console.log(MOCK ? '当前为 mock 模式（未配置 LLM_API_KEY）' : `模型：${CFG.model} @ ${CFG.baseUrl}`);
 });

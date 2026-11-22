@@ -9,17 +9,27 @@
 - **四维评分**：从准确性、深度、实战关联、表达四个维度给每题打 1–5 分，并指出遗漏的要点。
 - **复盘报告**：给出总分、各维度得分、最需要补的 3 个弱项及补法，并可逐题回看问答和参考要点。
 - **任意模型**：支持所有 OpenAI 兼容接口，包括 DeepSeek、通义千问、Kimi，也可以接你自建的模型网关。
-- **零依赖**：只需要 Node.js 18+，不需要 `npm install`，也不需要数据库。
+- **轻量**：前端 React + Vite，后端是零依赖的 Node 服务，不需要数据库。
 
 ## 快速开始
+
+需要 Node.js 20.19+。
 
 ```bash
 git clone https://github.com/a-xiaoyuan/ai-mock-interview.git
 cd ai-mock-interview
-npm start          # 或 node server.js
+npm install
+npm run dev
 ```
 
-打开 http://localhost:3000 。
+打开 http://localhost:5173 。`npm run dev` 会同时启动 Vite 开发服务器（5173）和后端 API 服务（3000），Vite 会把 `/api` 请求转发给后端。
+
+部署或日常使用时，先构建再启动，只需要一个端口：
+
+```bash
+npm run build
+npm start          # 打开 http://localhost:3000
+```
 
 不配置模型也能运行：此时为 **mock 模式**，题目是固定的，分数按回答长度粗略给出，适合先体验流程。
 
@@ -91,12 +101,25 @@ API Key 只保存在服务端，不会发送到浏览器。
 
 ```
 .
-├── server.js          # HTTP 服务、Agent Prompt、模型调用、mock 模式
-├── public/
-│   └── index.html     # 配置页、面试页、报告页（原生 JS，无构建）
-├── .env.example       # 配置模板
-└── package.json
+├── server.js                  # 后端：API、Agent Prompt、模型调用、mock 模式，生产环境同时托管 dist/
+├── src/
+│   ├── App.tsx                # 页面切换：配置 → 面试 → 报告
+│   ├── api.ts                 # 后端接口与流式读取
+│   ├── hooks/useInterview.ts  # 面试流程状态机：提问、追问、换题、结束
+│   ├── components/            # SetupPage / InterviewPage / ReportPage / ScoreBars
+│   ├── lib/                   # 计分、历史记录
+│   └── types.ts
+├── index.html                 # Vite 入口
+├── vite.config.mts            # 开发时把 /api 转发到 3000 端口
+└── .env.example               # 配置模板
 ```
+
+| 命令 | 作用 |
+| --- | --- |
+| `npm run dev` | 开发模式，前端热更新，后端改动自动重启 |
+| `npm run build` | 类型检查并构建前端到 `dist/` |
+| `npm start` | 启动后端，并托管已构建的前端 |
+| `npm run typecheck` | 只做 TypeScript 类型检查 |
 
 面试历史保存在浏览器的 localStorage 里，服务端不存储任何数据。
 
