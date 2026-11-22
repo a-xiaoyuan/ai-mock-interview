@@ -14,7 +14,7 @@
 ## 快速开始
 
 ```bash
-git clone https://github.com/a-xiaoyu/ai-mock-interview.git
+git clone https://github.com/a-xiaoyuan/ai-mock-interview.git
 cd ai-mock-interview
 npm start          # 或 node server.js
 ```
