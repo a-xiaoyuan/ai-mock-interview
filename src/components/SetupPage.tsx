@@ -4,6 +4,7 @@ import { COUNTS, LEVELS, ROLES } from '../constants';
 import { loadHistory } from '../lib/history';
 import { ACCEPTED_RESUME_TYPES, ResumeFileError, readResumeFile } from '../lib/resumeFile';
 import type { InterviewConfig, InterviewRecord, Plan } from '../types';
+import { GrowthPanel } from './GrowthPanel';
 
 interface Props {
   onStart: (config: InterviewConfig, plan: Plan) => void;
@@ -114,7 +115,7 @@ export function SetupPage({ onStart, onOpenRecord }: Props) {
         <div>
           <div className="label-row">
             <label htmlFor="resume">
-              简历 <span className="hint">上传 PDF 或粘贴文本，重点是项目经历</span>
+              简历 <span className="hint">上传 PDF、Word 或粘贴文本，重点是项目经历</span>
             </label>
             <button type="button" className="small" onClick={() => fileInput.current?.click()} disabled={parsing}>
               {parsing ? '正在读取…' : '上传简历'}
@@ -131,7 +132,7 @@ export function SetupPage({ onStart, onOpenRecord }: Props) {
             onDrop={onDrop}
           >
             <textarea id="resume" rows={10} placeholder={RESUME_PLACEHOLDER} value={config.resume} onChange={(e) => set('resume', e.target.value)} />
-            {dragOver && <div className="drop-hint">松开即可导入 PDF / TXT / MD</div>}
+            {dragOver && <div className="drop-hint">松开即可导入 PDF / Word / TXT</div>}
           </div>
           {fileStatus ? (
             <div className={fileStatus.ok ? 'muted file-status' : 'error file-status'}>{fileStatus.text}</div>
@@ -157,6 +158,7 @@ export function SetupPage({ onStart, onOpenRecord }: Props) {
 
       {history.length > 0 && (
         <div className="history">
+          <GrowthPanel history={history} />
           <h3>历史记录</h3>
           <table>
             <thead>

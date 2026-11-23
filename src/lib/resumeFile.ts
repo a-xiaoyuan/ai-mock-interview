@@ -5,7 +5,7 @@ const MAX_PAGES = 10;
 /** 平均每页少于这么多字，基本可以判定为扫描件（图片），没有文字层 */
 const MIN_CHARS_PER_PAGE = 20;
 
-export const ACCEPTED_RESUME_TYPES = '.pdf,.txt,.md';
+export const ACCEPTED_RESUME_TYPES = '.pdf,.docx,.txt,.md';
 
 export class ResumeFileError extends Error {}
 
@@ -13,8 +13,23 @@ export async function readResumeFile(file: File): Promise<string> {
   if (file.size > MAX_SIZE) throw new ResumeFileError('文件超过 10 MB，请压缩后再上传，或直接粘贴文字。');
   const name = file.name.toLowerCase();
   if (name.endsWith('.pdf') || file.type === 'application/pdf') return extractPdfText(file);
+  if (name.endsWith('.docx')) return extractDocxText(file);
+  if (name.endsWith('.doc')) throw new ResumeFileError('不支持旧版 .doc 格式，请在 Word 里另存为 .docx 或 PDF。');
   if (name.endsWith('.txt') || name.endsWith('.md') || file.type.startsWith('text/')) return cleanText(await file.text());
-  throw new ResumeFileError('暂时只支持 PDF、TXT、Markdown。Word 简历可以先另存为 PDF。');
+  throw new ResumeFileError('暂时只支持 PDF、Word（.docx）、TXT、Markdown。');
+}
+
+async function extractDocxText(file: File): Promise<string> {
+  const { default: mammoth } = await import('mammoth'); // 用到时才加载
+  let value: string;
+  try {
+    ({ value } = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() }));
+  } catch {
+    throw new ResumeFileError('无法读取这个 Word 文件，文件可能已损坏。可以另存为 PDF 再试。');
+  }
+  const text = cleanText(value).replace(/\n{2,}/g, '\n'); // mammoth 每段之间空一行，与 PDF 输出保持一致
+  if (!text) throw new ResumeFileError('这个 Word 文件里没有找到文字，简历可能是图片。请复制简历文字粘贴进来。');
+  return text;
 }
 
 async function extractPdfText(file: File): Promise<string> {
