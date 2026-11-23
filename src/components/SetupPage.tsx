@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState, type DragEvent } from 'react';
 import { createPlan, errorMessage } from '../api';
 import { COUNTS, LEVELS, ROLES } from '../constants';
 import { loadHistory } from '../lib/history';
+import { ACCEPTED_RESUME_TYPES, ResumeFileError, readResumeFile } from '../lib/resumeFile';
 import type { InterviewConfig, InterviewRecord, Plan } from '../types';
 
 interface Props {
@@ -26,8 +27,35 @@ export function SetupPage({ onStart, onOpenRecord }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [history] = useState(loadHistory);
+  const [parsing, setParsing] = useState(false);
+  const [fileStatus, setFileStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   const set = <K extends keyof InterviewConfig>(key: K, value: InterviewConfig[K]) => setConfig((c) => ({ ...c, [key]: value }));
+
+  async function loadFile(file: File | undefined) {
+    if (!file || parsing) return;
+    if (config.resume.trim() && !confirm('用文件内容替换当前已填写的简历？')) return;
+    setParsing(true);
+    setFileStatus(null);
+    try {
+      const text = await readResumeFile(file);
+      set('resume', text);
+      setFileStatus({ ok: true, text: `已从 ${file.name} 提取 ${text.length} 字，请检查一下，可以直接修改。` });
+    } catch (e) {
+      setFileStatus({ ok: false, text: e instanceof ResumeFileError ? e.message : `读取失败：${errorMessage(e)}` });
+    } finally {
+      setParsing(false);
+      if (fileInput.current) fileInput.current.value = ''; // 允许重复选择同一个文件
+    }
+  }
+
+  function onDrop(e: DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    loadFile(e.dataTransfer.files[0]);
+  }
 
   async function start() {
     setError('');
@@ -84,10 +112,32 @@ export function SetupPage({ onStart, onOpenRecord }: Props) {
 
       <div className="grid2">
         <div>
-          <label htmlFor="resume">
-            简历 <span className="hint">粘贴文本，重点是项目经历</span>
-          </label>
-          <textarea id="resume" rows={10} placeholder={RESUME_PLACEHOLDER} value={config.resume} onChange={(e) => set('resume', e.target.value)} />
+          <div className="label-row">
+            <label htmlFor="resume">
+              简历 <span className="hint">上传 PDF 或粘贴文本，重点是项目经历</span>
+            </label>
+            <button type="button" className="small" onClick={() => fileInput.current?.click()} disabled={parsing}>
+              {parsing ? '正在读取…' : '上传简历'}
+            </button>
+            <input ref={fileInput} type="file" accept={ACCEPTED_RESUME_TYPES} hidden onChange={(e) => loadFile(e.target.files?.[0])} />
+          </div>
+          <div
+            className={`dropzone${dragOver ? ' over' : ''}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={onDrop}
+          >
+            <textarea id="resume" rows={10} placeholder={RESUME_PLACEHOLDER} value={config.resume} onChange={(e) => set('resume', e.target.value)} />
+            {dragOver && <div className="drop-hint">松开即可导入 PDF / TXT / MD</div>}
+          </div>
+          {fileStatus ? (
+            <div className={fileStatus.ok ? 'muted file-status' : 'error file-status'}>{fileStatus.text}</div>
+          ) : (
+            <div className="muted file-status">也可以把文件拖到上面的框里。文件只在你的浏览器里读取，不会上传。</div>
+          )}
         </div>
         <div>
           <label htmlFor="jd">
