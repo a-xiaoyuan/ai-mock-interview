@@ -5,8 +5,12 @@ import { loadHistory } from '../lib/history';
 import { ACCEPTED_RESUME_TYPES, ResumeFileError, readResumeFile } from '../lib/resumeFile';
 import type { InterviewConfig, InterviewRecord, Plan } from '../types';
 import { GrowthPanel } from './GrowthPanel';
+import type { StartPractice } from './PracticeButton';
 
 interface Props {
+  /** 上一次填写的设置，回到首页时恢复 */
+  initial: InterviewConfig | null;
+  onPractice: StartPractice;
   onStart: (config: InterviewConfig, plan: Plan) => void;
   onOpenRecord: (record: InterviewRecord) => void;
 }
@@ -30,15 +34,18 @@ function PlanTimer() {
   );
 }
 
-export function SetupPage({ onStart, onOpenRecord }: Props) {
-  const [config, setConfig] = useState<InterviewConfig>({
+export function SetupPage({ initial, onStart, onPractice, onOpenRecord }: Props) {
+  const [config, setConfig] = useState<InterviewConfig>(
+    () =>
+      initial ?? {
     role: ROLES[0],
     level: LEVELS[0],
     style: 'gentle',
     resume: '',
     jd: '',
     count: 5,
-  });
+      },
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [history] = useState(loadHistory);
@@ -172,7 +179,7 @@ export function SetupPage({ onStart, onOpenRecord }: Props) {
 
       {history.length > 0 && (
         <div className="history">
-          <GrowthPanel history={history} />
+          <GrowthPanel history={history} onPractice={onPractice} />
           <h3>历史记录</h3>
           <table>
             <thead>
@@ -188,7 +195,10 @@ export function SetupPage({ onStart, onOpenRecord }: Props) {
               {history.map((r) => (
                 <tr key={r.at}>
                   <td>{new Date(r.at).toLocaleString()}</td>
-                  <td>{r.role}</td>
+                  <td>
+                    {r.role}
+                    {r.focus && <span className="tag">专项 · {r.focus}</span>}
+                  </td>
                   <td>{r.level}</td>
                   <td>
                     <b>{r.total}</b>

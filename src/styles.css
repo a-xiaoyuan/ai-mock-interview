@@ -167,3 +167,14 @@ details.q summary .qt { flex: 1; }
   .msgs { max-height: 60vh; }
   .report-head { grid-template-columns: 1fr; }
 }
+
+/* 专项练习 */
+.tag { display: inline-block; font-size: 12px; padding: 0 8px; margin-right: 6px; border-radius: 999px; background: #fbf1dc; color: var(--warn); vertical-align: 1px; }
+td .tag { margin: 0 0 0 6px; }
+.practice { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.practice-error { font-size: 12px; }
+.weak-list { list-style: none; padding: 0; }
+.weak-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.weak-list li:last-child { border-bottom: 0; }
+.weak-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 2px; }
+.focus-tag { margin-bottom: 8px; }

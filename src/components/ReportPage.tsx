@@ -1,13 +1,15 @@
 import { dimensionAverages, questionPercent } from '../lib/score';
 import type { InterviewRecord, ReportItem } from '../types';
+import { PracticeButton, type StartPractice } from './PracticeButton';
 import { ScoreBars } from './ScoreBars';
 
 interface Props {
   record: InterviewRecord;
   onAgain: () => void;
+  onPractice: StartPractice;
 }
 
-export function ReportPage({ record, onAgain }: Props) {
+export function ReportPage({ record, onAgain, onPractice }: Props) {
   const { items, report } = record;
 
   return (
@@ -19,6 +21,7 @@ export function ReportPage({ record, onAgain }: Props) {
         </div>
         <div>
           <div className="muted report-meta">
+            {record.focus && <span className="tag">专项 · {record.focus}</span>}
             {record.role} · {record.level} · {new Date(record.at).toLocaleString()}
           </div>
           <ScoreBars scores={dimensionAverages(items)} suffix=" / 5" large />
@@ -42,7 +45,10 @@ export function ReportPage({ record, onAgain }: Props) {
           <h3>优先补的弱项</h3>
           {report.weaknesses.map((w, i) => (
             <div className="weak" key={i}>
-              <b>{w.topic}</b>
+              <div className="weak-head">
+                <b>{w.topic}</b>
+                <PracticeButton target={{ topic: w.topic, role: record.role, level: record.level }} onPractice={onPractice} />
+              </div>
               <div>{w.why}</div>
               <div className="muted">怎么补：{w.action}</div>
             </div>

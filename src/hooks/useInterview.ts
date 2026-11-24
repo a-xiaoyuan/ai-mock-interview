@@ -82,7 +82,7 @@ export function useInterview(config: InterviewConfig, plan: Plan, onDone: (recor
     try {
       const report = await createReview({ role: config.role, level: config.level, items });
       // 中途离开了面试页就不再跳转到报告
-      if (alive.current) onDone({ at: Date.now(), role: config.role, level: config.level, items, report, total: totalScore(items) });
+      if (alive.current) onDone({ at: Date.now(), role: config.role, level: config.level, items, report, total: totalScore(items), focus: config.focus });
     } catch (e) {
       s.finished = false;
       notice(`生成报告失败：${errorMessage(e)}，可以再点一次「结束面试」重试`);

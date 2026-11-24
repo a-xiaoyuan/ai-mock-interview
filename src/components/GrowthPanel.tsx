@@ -2,15 +2,17 @@ import { useMemo, useState } from 'react';
 import { DIMS } from '../constants';
 import { computeGrowth } from '../lib/growth';
 import type { InterviewRecord } from '../types';
+import { PracticeButton, type StartPractice } from './PracticeButton';
 
 interface Props {
   history: InterviewRecord[];
+  onPractice: StartPractice;
 }
 
 const ALL = '全部岗位';
 
 /** 首页的能力成长：总分趋势、维度变化、反复出现的弱项。至少 2 场记录才显示。 */
-export function GrowthPanel({ history }: Props) {
+export function GrowthPanel({ history, onPractice }: Props) {
   const roles = useMemo(() => [...new Set(history.map((r) => r.role))], [history]);
   const [role, setRole] = useState(ALL);
   const filtered = role === ALL ? history : history.filter((r) => r.role === role);
@@ -60,13 +62,25 @@ export function GrowthPanel({ history }: Props) {
       {g.weaknesses.length > 0 && (
         <div className="repeat-weak">
           <div className="muted">反复出现的弱项</div>
-          <ul>
-            {g.weaknesses.map((w) => (
-              <li key={w.topic}>
-                {w.topic}
-                <span className="muted"> · 出现 {w.count} 次</span>
-              </li>
-            ))}
+          <ul className="weak-list">
+            {g.weaknesses.map((w) => {
+              const last = w.practice[w.practice.length - 1];
+              return (
+                <li key={w.topic}>
+                  <span className="weak-topic">
+                    {w.topic}
+                    <span className="muted"> · 出现 {w.count} 次</span>
+                    {last && (
+                      <span className="muted">
+                        {' '}
+                        · 专项练过 {w.practice.length} 次，最近 {last.total} 分
+                      </span>
+                    )}
+                  </span>
+                  <PracticeButton target={{ topic: w.topic, role: w.role, level: w.level }} onPractice={onPractice} />
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

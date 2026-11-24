@@ -13,7 +13,7 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
 
 export const getConfig = () => request<ServerConfig>('/api/config');
 
-export const createPlan = (body: { role: string; level: string; resume: string; jd: string; count: number }) =>
+export const createPlan = (body: { role: string; level: string; resume: string; jd: string; count: number; focus?: string }) =>
   request<Plan>('/api/plan', body);
 
 export const judgeAnswer = (body: { q: Question; chain: Turn[]; depth: number }) => request<Judgement>('/api/judge', body);

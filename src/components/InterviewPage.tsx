@@ -99,6 +99,7 @@ export function InterviewPage({ config, plan, onDone }: Props) {
       <aside className="side">
         <div className="card">
           <h3>进度</h3>
+          {config.focus && <div className="tag focus-tag">专项练习 · {config.focus}</div>}
           <div>
             <b>
               第 {iv.qi + 1} / {questions.length} 题

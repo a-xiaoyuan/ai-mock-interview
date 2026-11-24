@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { getConfig } from './api';
+import { createPlan, getConfig } from './api';
 import { InterviewPage } from './components/InterviewPage';
+import type { StartPractice } from './components/PracticeButton';
 import { ReportPage } from './components/ReportPage';
 import { SetupPage } from './components/SetupPage';
 import { saveRecord } from './lib/history';
@@ -15,6 +16,8 @@ export default function App() {
   const [view, setView] = useState<View>({ name: 'setup' });
   const [server, setServer] = useState<ServerConfig | null>(null);
   const [serverError, setServerError] = useState(false);
+  /** 首页最近一次填写的设置（简历、JD 等），回到首页和专项练习时沿用 */
+  const [lastConfig, setLastConfig] = useState<InterviewConfig | null>(null);
 
   useEffect(() => {
     getConfig()
@@ -26,6 +29,18 @@ export default function App() {
     if (view.name === 'interview' && !confirm('面试还没结束，确定离开？')) return;
     setView({ name: 'setup' });
   }
+
+  function startInterview(config: InterviewConfig, plan: Plan) {
+    if (!config.focus) setLastConfig(config);
+    setView({ name: 'interview', config, plan, key: Date.now() });
+  }
+
+  const startPractice: StartPractice = async ({ topic, role, level }) => {
+    const base = lastConfig ?? { style: 'gentle' as const, resume: '', jd: '' };
+    const config: InterviewConfig = { ...base, role, level, count: 3, focus: topic };
+    const plan = await createPlan({ role, level, resume: config.resume.trim(), jd: config.jd.trim(), count: 3, focus: topic });
+    startInterview(config, plan);
+  };
 
   function onDone(record: InterviewRecord) {
     saveRecord(record);
@@ -43,12 +58,14 @@ export default function App() {
       <main>
         {view.name === 'setup' && (
           <SetupPage
-            onStart={(config, plan) => setView({ name: 'interview', config, plan, key: Date.now() })}
+            initial={lastConfig}
+            onStart={startInterview}
+            onPractice={startPractice}
             onOpenRecord={(record) => setView({ name: 'report', record })}
           />
         )}
         {view.name === 'interview' && <InterviewPage key={view.key} config={view.config} plan={view.plan} onDone={onDone} />}
-        {view.name === 'report' && <ReportPage record={view.record} onAgain={() => setView({ name: 'setup' })} />}
+        {view.name === 'report' && <ReportPage record={view.record} onAgain={() => setView({ name: 'setup' })} onPractice={startPractice} />}
       </main>
     </>
   );

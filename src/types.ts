@@ -10,6 +10,8 @@ export interface InterviewConfig {
   resume: string;
   jd: string;
   count: number;
+  /** 专项练习的知识点；为空表示普通面试 */
+  focus?: string;
 }
 
 export interface Question {
@@ -65,6 +67,7 @@ export interface InterviewRecord {
   items: ReportItem[];
   report: Review;
   total: number;
+  focus?: string;
 }
 
 export type AskMode = 'open' | 'follow' | 'next';

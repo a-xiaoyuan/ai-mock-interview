@@ -37,20 +37,23 @@ const STYLE = {
 };
 
 const PROMPTS = {
-  planner: ({ role, level, resume, jd, count }) => [
+  planner: ({ role, level, resume, jd, count, focus }) => [
     {
       role: 'system',
       content:
         '你是一位资深技术面试官，负责为一场模拟面试制定大纲。只输出 JSON，不要任何解释或 markdown。\n' +
         'JSON 格式：{"questions":[{"stage":"项目深挖|八股|场景题","topic":"知识点短语","question":"主问题","points":["参考要点1","参考要点2","参考要点3"]}]}\n' +
         '规则：\n' +
-        `- 共 ${count} 道题；约一半来自候选人简历里的具体项目（引用项目名和技术点），其余为与岗位和 JD 相关的八股和场景题。\n` +
+        (focus
+          ? `- 这是一场针对「${focus}」的专项练习，候选人之前在这个知识点上反复答得不好。共 ${count} 道题，全部围绕这个知识点，从不同角度考察：先考核心概念和原理，再考边界和取舍，最后一道是场景题；如果简历里有相关项目，其中一道结合项目来问。\n` +
+            '- topic 写这道题具体考察的子知识点。\n'
+          : `- 共 ${count} 道题；约一半来自候选人简历里的具体项目（引用项目名和技术点），其余为与岗位和 JD 相关的八股和场景题。\n`) +
         '- 题目由浅入深；每题只问一件事，不要一题多问。\n' +
         '- points 写 3-5 条优秀回答应覆盖的要点，供评分对照，要准确。',
     },
     {
       role: 'user',
-      content: `岗位：${role}\n级别：${level}\n\n简历：\n${resume || '（未提供）'}\n\nJD：\n${jd || '（未提供）'}`,
+      content: `岗位：${role}\n级别：${level}\n${focus ? `专项知识点：${focus}\n` : ''}\n简历：\n${resume || '（未提供）'}\n\nJD：\n${jd || '（未提供）'}`,
     },
   ],
 
@@ -205,7 +208,16 @@ function normPlan(p, count) {
 
 // ---------- Mock 模式 ----------
 const mock = {
-  plan({ role, count }) {
+  plan({ role, count, focus }) {
+    if (focus) {
+      const qs = [
+        { stage: '八股', topic: `${focus} · 概念`, question: `用你自己的话讲讲「${focus}」是什么，解决了什么问题？`, points: ['定义准确', '说清要解决的问题', '举一个例子'] },
+        { stage: '八股', topic: `${focus} · 原理`, question: `「${focus}」底层是怎么实现的？关键机制有哪些？`, points: ['核心机制', '关键数据结构或流程', '性能特点'] },
+        { stage: '场景题', topic: `${focus} · 取舍`, question: `「${focus}」有哪些常见的坑或边界情况？你会怎么规避？`, points: ['至少两个典型问题', '原因分析', '规避方案及代价'] },
+        { stage: '场景题', topic: `${focus} · 实战`, question: `如果线上和「${focus}」相关的部分出了故障，你会怎么排查？`, points: ['先止血', '定位思路', '监控指标', '复盘改进'] },
+      ];
+      return { questions: Array.from({ length: count }, (_, i) => qs[i % qs.length]) };
+    }
     const bank = [
       { stage: '项目深挖', topic: '项目难点', question: '挑一个你简历里最有挑战的项目，讲讲你负责的部分和遇到的最大技术难点。', points: ['背景与目标清晰', '个人职责明确', '难点有技术深度', '方案有取舍', '结果有数据'] },
       { stage: '八股', topic: 'Redis', question: 'Redis 为什么这么快？单线程模型下怎么处理高并发？', points: ['内存操作', 'IO 多路复用', '单线程避免锁竞争', '高效数据结构', '6.0 之后的多线程 IO'] },
@@ -260,7 +272,8 @@ const routes = {
 
   'POST /api/plan': async (b) => {
     const count = Math.max(2, Math.min(10, Number(b.count) || 5));
-    const args = { role: String(b.role || '后端开发'), level: String(b.level || '校招'), resume: String(b.resume || '').slice(0, 8000), jd: String(b.jd || '').slice(0, 4000), count };
+    const focus = String(b.focus || '').trim().slice(0, 60);
+    const args = { role: String(b.role || '后端开发'), level: String(b.level || '校招'), resume: String(b.resume || '').slice(0, 8000), jd: String(b.jd || '').slice(0, 4000), count, focus };
     const raw = MOCK ? mock.plan(args) : await chatJSON(PROMPTS.planner(args), { model: CFG.model, temperature: 0.7 });
     return normPlan(raw, count);
   },
