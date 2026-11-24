@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type DragEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { createPlan, errorMessage } from '../api';
 import { COUNTS, LEVELS, ROLES } from '../constants';
+import { loadBank } from '../lib/bank';
 import { loadHistory } from '../lib/history';
 import { ACCEPTED_RESUME_TYPES, ResumeFileError, readResumeFile } from '../lib/resumeFile';
 import type { InterviewConfig, InterviewRecord, Plan } from '../types';
@@ -11,6 +12,9 @@ interface Props {
   /** 上一次填写的设置，回到首页时恢复 */
   initial: InterviewConfig | null;
   onPractice: StartPractice;
+  /** 表单每次变化都同步给上层，离开首页再回来时恢复 */
+  onChange: (config: InterviewConfig) => void;
+  onOpenBank: () => void;
   onStart: (config: InterviewConfig, plan: Plan) => void;
   onOpenRecord: (record: InterviewRecord) => void;
 }
@@ -34,7 +38,7 @@ function PlanTimer() {
   );
 }
 
-export function SetupPage({ initial, onStart, onPractice, onOpenRecord }: Props) {
+export function SetupPage({ initial, onStart, onPractice, onChange, onOpenBank, onOpenRecord }: Props) {
   const [config, setConfig] = useState<InterviewConfig>(
     () =>
       initial ?? {
@@ -53,6 +57,11 @@ export function SetupPage({ initial, onStart, onPractice, onOpenRecord }: Props)
   const [fileStatus, setFileStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    onChange(config);
+  }, [config]); // eslint-disable-line react-hooks/exhaustive-deps
+  const bankCount = useMemo(() => loadBank().filter((it) => !it.role || it.role === config.role).length, [config.role]);
 
   const set = <K extends keyof InterviewConfig>(key: K, value: InterviewConfig[K]) => setConfig((c) => ({ ...c, [key]: value }));
 
@@ -83,8 +92,7 @@ export function SetupPage({ initial, onStart, onPractice, onOpenRecord }: Props)
     setError('');
     setLoading(true);
     try {
-      const plan = await createPlan({ ...config, resume: config.resume.trim(), jd: config.jd.trim() });
-      onStart(config, plan);
+      onStart(config, await createPlan(config));
     } catch (e) {
       setError(`启动失败：${errorMessage(e)}`);
       setLoading(false);
@@ -174,6 +182,19 @@ export function SetupPage({ initial, onStart, onPractice, onOpenRecord }: Props)
           开始面试
         </button>
         {loading && <PlanTimer />}
+      </div>
+      <div className="bank-switch muted">
+        {bankCount > 0 ? (
+          <label className="switch">
+            <input type="checkbox" checked={config.useBank !== false} onChange={(e) => set('useBank', e.target.checked)} />
+            优先用面经题库里的题（这个岗位可用 {bankCount} 道）
+          </label>
+        ) : (
+          <span>想练真实面试题？</span>
+        )}
+        <button type="button" className="link" onClick={onOpenBank}>
+          {bankCount > 0 ? '管理题库' : '去添加面经'}
+        </button>
       </div>
       {error && <div className="error">{error}</div>}
 

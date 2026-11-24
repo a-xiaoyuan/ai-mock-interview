@@ -1,4 +1,5 @@
-import type { AskMode, InterviewStyle, Judgement, Plan, Question, ReportItem, Review, ServerConfig, Turn } from './types';
+import { bankPoolFor } from './lib/bank';
+import type { AskMode, InterviewConfig, InterviewStyle, Judgement, Plan, Question, ReportItem, Review, ServerConfig, Turn } from './types';
 
 async function request<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
@@ -13,8 +14,23 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
 
 export const getConfig = () => request<ServerConfig>('/api/config');
 
-export const createPlan = (body: { role: string; level: string; resume: string; jd: string; count: number; focus?: string }) =>
-  request<Plan>('/api/plan', body);
+/** 生成面试大纲；开启题库时带上同岗位的面经题，由模型挑选 */
+export function createPlan(config: InterviewConfig) {
+  const bank = config.useBank === false ? [] : bankPoolFor(config.role);
+  return request<Plan>('/api/plan', {
+    role: config.role,
+    level: config.level,
+    resume: config.resume.trim(),
+    jd: config.jd.trim(),
+    count: config.count,
+    focus: config.focus,
+    bank: bank.map(({ id, question, topic, points, used }) => ({ id, question, topic, points, used })),
+  });
+}
+
+/** 把面经原文整理成题目；existing 是题库已有的题，模型据此标出重复（duplicateOf 为重复的题库条目 id） */
+export const extractQuestions = (body: { text: string; role: string; existing: { id: string; question: string; topic: string }[] }) =>
+  request<{ questions: (Question & { duplicateOf?: string })[] }>('/api/extract', body);
 
 export const judgeAnswer = (body: { q: Question; chain: Turn[]; depth: number }) => request<Judgement>('/api/judge', body);
 

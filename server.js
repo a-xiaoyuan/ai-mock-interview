@@ -37,23 +37,73 @@ const STYLE = {
 };
 
 const PROMPTS = {
-  planner: ({ role, level, resume, jd, count, focus }) => [
+  planner: ({ role, level, resume, jd, count, focus, bank }) => [
     {
       role: 'system',
       content:
         '你是一位资深技术面试官，负责为一场模拟面试制定大纲。只输出 JSON，不要任何解释或 markdown。\n' +
-        'JSON 格式：{"questions":[{"stage":"项目深挖|八股|场景题","topic":"知识点短语","question":"主问题","points":["参考要点1","参考要点2","参考要点3"]}]}\n' +
+        'JSON 格式：{"questions":[{"stage":"项目深挖|八股|场景题","topic":"知识点短语","question":"主问题","points":["参考要点1","参考要点2","参考要点3"],"from":"选自面经题库时填编号如 B3，否则填空字符串"}]}\n' +
         '规则：\n' +
         (focus
           ? `- 这是一场针对「${focus}」的专项练习，候选人之前在这个知识点上反复答得不好。共 ${count} 道题，全部围绕这个知识点，从不同角度考察：先考核心概念和原理，再考边界和取舍，最后一道是场景题；如果简历里有相关项目，其中一道结合项目来问。\n` +
             '- topic 写这道题具体考察的子知识点。\n'
           : `- 共 ${count} 道题；约一半来自候选人简历里的具体项目（引用项目名和技术点），其余为与岗位和 JD 相关的八股和场景题。\n`) +
         '- 题目由浅入深；每题只问一件事，不要一题多问。\n' +
-        '- points 写 3-5 条优秀回答应覆盖的要点，供评分对照，要准确。',
+        '- points 写 3-5 条优秀回答应覆盖的要点，供评分对照，要准确。' +
+        (bank.length
+          ? '\n- 用户消息里附有候选人收集的真实面经题库（编号 B1、B2…，来自真实面试，优先级高）。' +
+            (focus
+              ? `只选与「${focus}」相关的题，有几道选几道，不够的再自己出。`
+              : `从中挑选与岗位相关的题，约占一半（${Math.ceil(count / 2)} 道左右，题库不够就全用）；优先挑「已考次数」少的。`) +
+            '选用的题保留原意，可以稍作口语化改写；题库给了参考要点的可以沿用并补充；选用的题 from 填对应编号，自己出的题 from 填空字符串。'
+          : ''),
     },
     {
       role: 'user',
-      content: `岗位：${role}\n级别：${level}\n${focus ? `专项知识点：${focus}\n` : ''}\n简历：\n${resume || '（未提供）'}\n\nJD：\n${jd || '（未提供）'}`,
+      content:
+        `岗位：${role}\n级别：${level}\n${focus ? `专项知识点：${focus}\n` : ''}\n简历：\n${resume || '（未提供）'}\n\nJD：\n${jd || '（未提供）'}` +
+        (bank.length
+          ? '\n\n面经题库：\n' +
+            bank
+              .map((b, i) => `B${i + 1}【${b.topic}】${b.question}（已考 ${b.used} 次）${b.points.length ? `\n  参考要点：${b.points.join('；')}` : ''}`)
+              .join('\n')
+          : ''),
+    },
+  ],
+
+  extractor: ({ text, role }) => [
+    {
+      role: 'system',
+      content:
+        '你负责把候选人记录的真实面经整理成题库。只输出 JSON，不要任何解释或 markdown。\n' +
+        'JSON 格式：{"questions":[{"stage":"项目深挖|八股|场景题|算法","topic":"知识点名称","question":"题目","points":["参考要点1","参考要点2","参考要点3"]}]}\n' +
+        '规则：\n' +
+        '- 只提取面试官问的技术问题；寒暄、HR 问题、薪资、反问环节、面经作者的感想都不要。\n' +
+        '- 口语化或记录不全的问题，改写成清晰完整的一句话，但不能改变考察点；一句话里问了几件不相关的事，拆成几道题；重复的问题只保留一道。\n' +
+        '- 追问如果考的是新知识点，单独成题；只是对上一题的深挖，就并入上一题的参考要点。\n' +
+        '- 针对面经作者本人项目的问题（例如“你们项目的 QPS 多少”），改写成任何候选人都能回答的通用问法（例如“讲讲你项目里最高的 QPS 是多少、怎么测出来的”），stage 填项目深挖。\n' +
+        '- 算法题写清题意，points 写思路和复杂度。\n' +
+        '- topic 是 2-12 个字的知识点名称，例如“缓存一致性”“MySQL 索引”“TCP 握手”。\n' +
+        '- points 写 3-5 条优秀回答应覆盖的要点，要准确；面经原文里如果记了答案或面试官的反馈，可以参考，但以正确性为准。\n' +
+        '- 最多 30 道题。原文里没有技术问题就返回空数组。',
+    },
+    { role: 'user', content: `岗位：${role || '（未注明）'}\n\n面经原文：\n${text}` },
+  ],
+
+  // 和提题分开做：放在一次调用里，模型容易只输出重复的题、漏掉新题
+  deduper: ({ fresh, existing }) => [
+    {
+      role: 'system',
+      content:
+        '判断新题和题库里已有的题是否重复。只输出 JSON：{"pairs":[{"new":"N1","existing":"E3"}]}。\n' +
+        '两道题考察的是同一件事就算重复，说法不同也算（例如“索引什么时候失效”和“MySQL 索引在哪些场景下会失效”）；' +
+        '同一知识点下的不同问题不算（例如 TCP 三次握手和四次挥手、MVCC 原理和 ReadView 生成时机）。没有重复就返回空数组。',
+    },
+    {
+      role: 'user',
+      content:
+        '新题：\n' + fresh.map((q, i) => `N${i + 1}【${q.topic}】${q.question}`).join('\n') +
+        '\n\n题库已有的题：\n' + existing.map((e, i) => `E${i + 1}【${e.topic}】${e.question}`).join('\n'),
     },
   ],
 
@@ -200,23 +250,71 @@ function normJudge(j, depth) {
   };
   return out;
 }
-function normPlan(p, count) {
+function normQuestion(q) {
+  return {
+    stage: String(q.stage || '八股'),
+    topic: String(q.topic || q.stage || '综合').slice(0, 30),
+    question: String(q.question),
+    points: Array.isArray(q.points) ? q.points.map(String).slice(0, 6) : [],
+  };
+}
+
+/** bank 为本次传给模型的题库；模型用 B1、B2… 引用，这里换回题库条目的 id */
+function normPlan(p, count, bank = []) {
+  const used = new Set();
   const qs = (p.questions || [])
     .filter((q) => q && q.question)
     .slice(0, count)
-    .map((q) => ({
-      stage: String(q.stage || '八股'),
-      topic: String(q.topic || q.stage || '综合'),
-      question: String(q.question),
-      points: Array.isArray(q.points) ? q.points.map(String) : [],
-    }));
+    .map((q) => {
+      const m = String(q.from || '').match(/B(\d+)/i);
+      const b = m && bank[Number(m[1]) - 1];
+      const out = normQuestion(q);
+      if (b && !used.has(b.id)) {
+        used.add(b.id);
+        out.from = b.id;
+      }
+      return out;
+    });
   if (!qs.length) throw new Error('大纲为空');
   return { questions: qs };
 }
 
+function normBank(list) {
+  return (Array.isArray(list) ? list : [])
+    .filter((b) => b && b.id && b.question)
+    .slice(0, 30)
+    .map((b) => ({
+      id: String(b.id).slice(0, 40),
+      question: String(b.question).slice(0, 300),
+      topic: String(b.topic || '').slice(0, 30),
+      points: Array.isArray(b.points) ? b.points.map((s) => String(s).slice(0, 120)).slice(0, 6) : [],
+      used: Math.max(0, Number(b.used) || 0),
+    }));
+}
+
 // ---------- Mock 模式 ----------
 const mock = {
-  plan({ role, count, focus }) {
+  /** 按行切分：以问号结尾、或带“问/题”编号的行当作题目 */
+  extract({ text }) {
+    const questions = text
+      .split(/\n+/)
+      .map((l) => l.replace(/^\s*(?:[-*•]|\d+[.、)）]|Q\d*[:：]?|问[:：])\s*/, '').trim())
+      .filter((l) => l.length >= 6 && /[?？]$/.test(l))
+      .slice(0, 30)
+      .map((question) => ({ stage: '八股', topic: '面经', question, points: [] }));
+    return { questions };
+  },
+  plan({ role, count, focus, bank: library = [] }) {
+    if (library.length && !focus) {
+      // mock：前一半题直接取题库里考得最少的题
+      const picked = library
+        .map((b, i) => ({ ...b, ref: `B${i + 1}` }))
+        .sort((a, b) => a.used - b.used)
+        .slice(0, Math.ceil(count / 2))
+        .map((b) => ({ stage: '面经', topic: b.topic, question: b.question, points: b.points, from: b.ref }));
+      const rest = this.plan({ role, count: count - picked.length, focus, bank: [] }).questions;
+      return { questions: [...picked, ...rest] };
+    }
     if (focus) {
       const qs = [
         { stage: '八股', topic: `${focus} · 概念`, question: `用你自己的话讲讲「${focus}」是什么，解决了什么问题？`, points: ['定义准确', '说清要解决的问题', '举一个例子'] },
@@ -281,9 +379,37 @@ const routes = {
   'POST /api/plan': async (b) => {
     const count = Math.max(2, Math.min(10, Number(b.count) || 5));
     const focus = String(b.focus || '').trim().slice(0, 60);
-    const args = { role: String(b.role || '后端开发'), level: String(b.level || '校招'), resume: String(b.resume || '').slice(0, 8000), jd: String(b.jd || '').slice(0, 4000), count, focus };
+    const bank = normBank(b.bank);
+    const args = { role: String(b.role || '后端开发'), level: String(b.level || '校招'), resume: String(b.resume || '').slice(0, 8000), jd: String(b.jd || '').slice(0, 4000), count, focus, bank };
     const raw = MOCK ? mock.plan(args) : await chatJSON(PROMPTS.planner(args), { model: CFG.model, temperature: 0.7 });
-    return normPlan(raw, count);
+    return normPlan(raw, count, bank);
+  },
+
+  'POST /api/extract': async (b) => {
+    const text = String(b.text || '').trim().slice(0, 20000);
+    if (!text) throw new Error('面经内容为空');
+    // 题库已有的题，用来让模型判断重复（只需要题目和知识点）
+    const existing = (Array.isArray(b.existing) ? b.existing : [])
+      .filter((e) => e && e.id && e.question)
+      .slice(0, 150)
+      .map((e) => ({ id: String(e.id).slice(0, 40), question: String(e.question).slice(0, 200), topic: String(e.topic || '').slice(0, 30) }));
+    const args = { text, role: String(b.role || '').slice(0, 30) };
+    const raw = MOCK ? mock.extract(args) : await chatJSON(PROMPTS.extractor(args), { model: CFG.model, temperature: 0.2 });
+    const questions = (raw.questions || []).filter((q) => q && q.question).slice(0, 30).map(normQuestion);
+    if (MOCK || !questions.length || !existing.length) return { questions };
+
+    // 第二步：判重。失败不影响提题结果，前端还有字面相似度兜底
+    try {
+      const { pairs } = await chatJSON(PROMPTS.deduper({ fresh: questions, existing }), { model: CFG.fastModel, temperature: 0 });
+      for (const p of Array.isArray(pairs) ? pairs : []) {
+        const q = questions[Number(String(p.new).replace(/\D/g, '')) - 1];
+        const e = existing[Number(String(p.existing).replace(/\D/g, '')) - 1];
+        if (q && e && !q.duplicateOf) q.duplicateOf = e.id;
+      }
+    } catch (err) {
+      console.warn('判重失败：', err.message);
+    }
+    return { questions };
   },
 
   'POST /api/judge': async (b) => {

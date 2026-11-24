@@ -105,7 +105,7 @@ export function InterviewPage({ config, plan, onDone }: Props) {
               第 {iv.qi + 1} / {questions.length} 题
             </b>{' '}
             <span className="stage">
-              {current.stage} · {current.topic}
+              {current.from ? '面经' : current.stage} · {current.topic}
             </span>
           </div>
           <div className="progress">

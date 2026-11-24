@@ -85,6 +85,7 @@ function QuestionReview({ index, item }: { index: number; item: ReportItem }) {
         <span className="qt">
           {index + 1}. {item.question}
         </span>
+        {item.from && <span className="tag">面经</span>}
         <span className="stage">{item.topic}</span>
         <ScorePill item={item} />
       </summary>

@@ -12,6 +12,8 @@ export interface InterviewConfig {
   count: number;
   /** 专项练习的知识点；为空表示普通面试 */
   focus?: string;
+  /** 是否从面经题库里选题，默认开启 */
+  useBank?: boolean;
 }
 
 export interface Question {
@@ -19,6 +21,23 @@ export interface Question {
   topic: string;
   question: string;
   points: string[];
+  /** 选自面经题库时为题库条目 id */
+  from?: string;
+}
+
+/** 面经题库里的一道题 */
+export interface BankItem {
+  id: string;
+  stage: string;
+  topic: string;
+  question: string;
+  points: string[];
+  /** 来源备注，例如公司和轮次 */
+  source: string;
+  role: string;
+  addedAt: number;
+  /** 被选进面试的次数 */
+  used: number;
 }
 
 export interface Plan {
