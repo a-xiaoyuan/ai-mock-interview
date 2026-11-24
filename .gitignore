@@ -9,3 +9,6 @@ Thumbs.db
 *.log
 .claude/
 dist/
+
+# 评分回归的每次运行结果（基线 evals/baseline.json 要提交）
+evals/results/

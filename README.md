@@ -110,9 +110,11 @@ API Key 只保存在服务端，不会发送到浏览器。
 │   ├── App.tsx                # 页面切换：配置 → 面试 → 报告
 │   ├── api.ts                 # 后端接口与流式读取
 │   ├── hooks/useInterview.ts  # 面试流程状态机：提问、追问、换题、结束
-│   ├── components/            # SetupPage / InterviewPage / ReportPage / ScoreBars
+│   ├── components/            # SetupPage / InterviewPage / ReportPage / BankPage 等页面组件
 │   ├── lib/                   # 计分、历史记录、成长统计、简历文件解析（pdf.js / mammoth，在浏览器本地完成）
 │   └── types.ts
+├── evals/                     # 评分回归集：judge-cases.json 用例、baseline.json 基线
+├── scripts/eval-judge.mjs     # 评分回归脚本（npm run eval）
 ├── index.html                 # Vite 入口
 ├── vite.config.mts            # 开发时把 /api 转发到 3000 端口
 └── .env.example               # 配置模板
@@ -124,8 +126,24 @@ API Key 只保存在服务端，不会发送到浏览器。
 | `npm run build` | 类型检查并构建前端到 `dist/` |
 | `npm start` | 启动后端，并托管已构建的前端 |
 | `npm run typecheck` | 只做 TypeScript 类型检查 |
+| `npm run eval` | 评分回归：需先启动服务，用固定问答检查评分是否跑偏 |
 
 面试历史和面经题库都保存在浏览器的 localStorage 里，服务端不存储任何数据。
+
+## 评分回归
+
+改了 Judge 的 Prompt 或换了模型，评分可能悄悄变松或变严。`evals/judge-cases.json` 里有一组固定的问答，覆盖高质量回答、长篇空话、自信但错误、直接说不会、简略但正确、项目回答空泛等情况，每个用例写明各维度和总分的预期区间，以及该追问还是换题；另外列出几组“好答案必须高于差答案”的对比。
+
+```bash
+npm start                              # 先启动服务（读取 .env 里的模型配置）
+npm run eval                           # 每个用例跑 3 次
+npm run eval -- --runs 5 --only cache-strong,cache-verbose-empty
+npm run eval -- --save-baseline        # 确认结果没问题后，保存为新的基线
+```
+
+脚本会报告每个用例是通过、不稳定（多次结果不一致）还是失败，检查好坏对比是否成立，并和 `evals/baseline.json` 对比，标出平均总分变化 ≥ 2 或某个维度变化 ≥ 1 的用例。有用例失败或对比不成立时退出码为 1，可以放进 CI。
+
+建议的流程：改 Prompt 前先跑一遍确认基线，改完再跑；有漂移时看是变好了还是变坏了，确认变好再 `--save-baseline`。提 Prompt 相关的 PR 时，请附上前后两次的运行结果。新增用例时，区间要宽到能容忍正常波动，又要窄到能抓住明显跑偏。
 
 ## Roadmap
 
@@ -136,7 +154,7 @@ API Key 只保存在服务端，不会发送到浏览器。
 - [ ] 视频面试：摄像头、录像回放、仪态建议（在浏览器本地分析）
 - [x] 面经上传：把真实面经整理成题目，确认后加入题库，出题时优先使用
 - [ ] Skill 题包：把“某类面试怎么面”写成可版本管理的题包，支持社区贡献
-- [ ] 评分回归集：修改 Prompt 或更换模型前，先自动检查评分是否漂移
+- [x] 评分回归集：修改 Prompt 或更换模型前，先自动检查评分是否漂移
 - [x] 能力成长曲线
 - [x] 专项练习：针对弱项的知识点短练
 - [ ] 算法手撕：在线编辑器 + 沙箱执行
@@ -145,7 +163,8 @@ API Key 只保存在服务端，不会发送到浏览器。
 
 欢迎提 Issue 和 PR，以下几类尤其需要：
 
-- **Prompt 改进**：附上改动前后的面试记录对比，说明好在哪里。
+- **Prompt 改进**：附上改动前后的面试记录对比和 `npm run eval` 结果，说明好在哪里。
+- **评分用例**：在 `evals/judge-cases.json` 里补充容易评错的回答。
 - **新岗位方向**：补充对应岗位的出题倾向和评分要点。
 - **Bug 修复**：请写明复现步骤，以及所用的模型和服务商。
 
