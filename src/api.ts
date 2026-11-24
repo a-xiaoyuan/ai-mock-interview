@@ -18,7 +18,7 @@ export const createPlan = (body: { role: string; level: string; resume: string; 
 
 export const judgeAnswer = (body: { q: Question; chain: Turn[]; depth: number }) => request<Judgement>('/api/judge', body);
 
-export const createReview = (body: { role: string; level: string; items: ReportItem[] }) => request<Review>('/api/report', body);
+export const createReview = (body: { role: string; level: string; items: ReportItem[]; focus?: string; knownTopics?: string[] }) => request<Review>('/api/report', body);
 
 export interface AskBody {
   mode: AskMode;

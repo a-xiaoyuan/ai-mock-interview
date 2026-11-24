@@ -100,13 +100,21 @@ const PROMPTS = {
     ];
   },
 
-  reviewer: ({ role, level, items }) => [
+  reviewer: ({ role, level, items, focus, knownTopics }) => [
     {
       role: 'system',
       content:
         '你是技术面试复盘教练。根据整场面试每道题的评分和点评，写复盘。只输出 JSON。\n' +
         'JSON 格式：{"summary":"两三句总体评价，像面试官给 HR 的评语","highlights":["做得好的地方"],"weaknesses":[{"topic":"弱项","why":"为什么是弱项（引用具体题目表现）","action":"具体怎么补（看什么、练什么）"}]}\n' +
-        'weaknesses 最多 3 条，按严重程度排序，action 要具体可执行。',
+        'weaknesses 最多 3 条，按严重程度排序，action 要具体可执行。\n' +
+        'topic 必须是一个知识点名称（2-12 个字的名词短语，例如“缓存一致性”“MySQL 索引”“线程池”），不能写成评价句（错误示例：“缓存更新策略知识不全面”“对并发问题理解不深”），具体哪里不足写在 why 里。' +
+        '同一场里不要出现同一知识点的两条弱项，要合并。' +
+        (knownTopics.length
+          ? `\n候选人以往的弱项名称：${knownTopics.join('、')}。如果这次的弱项属于其中某个知识点（同一个知识点或它的子问题），topic 必须原样沿用那个名称，方便跟踪进步；确实是新知识点时才起新名字。`
+          : '') +
+        (focus
+          ? `\n这是一场针对「${focus}」的专项练习：如果候选人在「${focus}」上仍有不足，topic 就写「${focus}」，把具体子问题写进 why；只有暴露出与它无关的其他知识点问题时才另起一条。`
+          : ''),
     },
     {
       role: 'user',
@@ -246,13 +254,13 @@ const mock = {
     if (mode === 'follow') return direction.includes('数据') ? '能具体一点吗？比如当时的数据量、QPS 或者耗时大概是多少？' : '为什么选这个方案？有没有考虑过别的做法，取舍是什么？';
     return `好的，我们换个话题。${q.question}`;
   },
-  reviewer({ items }) {
+  reviewer({ items, focus }) {
     const scored = items.filter((i) => !i.skipped);
     const weak = [...scored].sort((a, b) => sum(a.scores) - sum(b.scores)).slice(0, 2);
     return {
       summary: '（mock 模式）整体能回答基本问题，但深度和实战数据不足，追问两层后容易卡住。',
       highlights: ['表达比较有条理'],
-      weaknesses: weak.map((w) => ({ topic: w.topic, why: `「${w.question.slice(0, 20)}…」得分偏低：${w.comment}`, action: `回顾参考要点，用 STAR 结构重答一遍，并准备一个具体数据。` })),
+      weaknesses: weak.map((w, i) => ({ topic: focus && i === 0 ? focus : w.topic, why: `「${w.question.slice(0, 20)}…」得分偏低：${w.comment}`, action: `回顾参考要点，用 STAR 结构重答一遍，并准备一个具体数据。` })),
     };
   },
 };
@@ -295,7 +303,12 @@ const routes = {
 
   'POST /api/report': async (b) => {
     const items = Array.isArray(b.items) ? b.items : [];
-    const args = { role: String(b.role || ''), level: String(b.level || ''), items };
+    const focus = String(b.focus || '').trim().slice(0, 60);
+    const knownTopics = (Array.isArray(b.knownTopics) ? b.knownTopics : [])
+      .map((t) => String(t).trim().slice(0, 30))
+      .filter(Boolean)
+      .slice(0, 20);
+    const args = { role: String(b.role || ''), level: String(b.level || ''), items, focus, knownTopics };
     const raw = MOCK ? mock.reviewer(args) : await chatJSON(PROMPTS.reviewer(args), { model: CFG.model, temperature: 0.3 });
     return {
       summary: String(raw.summary || ''),

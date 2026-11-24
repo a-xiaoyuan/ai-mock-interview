@@ -1,5 +1,6 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { createReview, errorMessage, judgeAnswer, streamAsk } from '../api';
+import { knownWeaknessTopics } from '../lib/history';
 import { totalScore } from '../lib/score';
 import type { AskMode, InterviewConfig, InterviewRecord, Judgement, Plan, QuestionResult, ReportItem, Turn } from '../types';
 
@@ -80,7 +81,7 @@ export function useInterview(config: InterviewConfig, plan: Plan, onDone: (recor
       return { ...q, chain: s.chains[i], skipped: !judged, scores: judged?.scores, comment: judged?.comment, missed: judged?.missed };
     });
     try {
-      const report = await createReview({ role: config.role, level: config.level, items });
+      const report = await createReview({ role: config.role, level: config.level, items, focus: config.focus, knownTopics: knownWeaknessTopics() });
       // 中途离开了面试页就不再跳转到报告
       if (alive.current) onDone({ at: Date.now(), role: config.role, level: config.level, items, report, total: totalScore(items), focus: config.focus });
     } catch (e) {
