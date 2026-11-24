@@ -102,6 +102,9 @@ select.compact { width: auto; padding: 3px 8px; font-size: 13px; }
 .msg .who { display: block; font-size: 12px; opacity: 0.7; margin-bottom: 2px; }
 .typing::after { content: '▍'; animation: blink 1s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
+.thinking { color: var(--muted); }
+.thinking::after { content: '…'; display: inline-block; width: 1.2em; animation: dots 1.2s steps(4) infinite; overflow: hidden; vertical-align: bottom; }
+@keyframes dots { from { width: 0; } to { width: 1.2em; } }
 .divider { align-self: center; font-size: 12px; color: var(--muted); text-align: center; }
 .composer { border-top: 1px solid var(--line); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 .composer textarea { min-height: 84px; }

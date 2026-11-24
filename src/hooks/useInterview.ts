@@ -63,7 +63,10 @@ export function useInterview(config: InterviewConfig, plan: Plan, onDone: (recor
     s.qi++;
     s.depth = 0;
     rerender();
-    if (s.qi >= total) return finish();
+    if (s.qi >= total) {
+      setStreaming(null);
+      return finish();
+    }
     await ask('next');
   }
 
@@ -92,11 +95,13 @@ export function useInterview(config: InterviewConfig, plan: Plan, onDone: (recor
     if (s.busy || s.finished || s.qi >= total) return false;
     const chain = s.chains[s.qi];
     chain.push({ role: 'candidate', text });
+    setStreaming(''); // 评分期间先显示“正在思考”，随后由追问/下一题的流式输出接上
     setBusy(true);
     let judgement: Judgement;
     try {
       judgement = await judgeAnswer({ q: plan.questions[s.qi], chain, depth: s.depth });
     } catch (e) {
+      setStreaming(null);
       chain.pop();
       notice(`评分出错：${errorMessage(e)}，请重新发送`);
       setBusy(false);

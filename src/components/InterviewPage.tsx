@@ -146,7 +146,7 @@ function Message({ role, text, typing = false }: { role: 'interviewer' | 'candid
   return (
     <div className={`msg ${role}${typing ? ' typing' : ''}`}>
       <span className="who">{role === 'interviewer' ? '面试官' : '我'}</span>
-      {text}
+      {typing && !text ? <span className="thinking">正在思考</span> : text}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useRef, useState, type DragEvent } from 'react';
+import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { createPlan, errorMessage } from '../api';
 import { COUNTS, LEVELS, ROLES } from '../constants';
 import { loadHistory } from '../lib/history';
@@ -15,6 +15,20 @@ const RESUME_PLACEHOLDER = `例：
 项目：校园二手交易平台（Spring Boot + Redis + MySQL）
 - 负责商品搜索与下单模块，用 Redis 缓存热门商品，QPS 从 300 提升到 2000
 - 用 RabbitMQ 异步处理订单超时取消`;
+
+/** 生成大纲通常要 10–30 秒，显示已等待时间，免得用户以为卡住了 */
+function PlanTimer() {
+  const [sec, setSec] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setSec((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <span className="muted">
+      正在根据简历生成面试大纲… 已用 {sec} 秒{sec >= 5 && '，通常需要 10–30 秒'}
+    </span>
+  );
+}
 
 export function SetupPage({ onStart, onOpenRecord }: Props) {
   const [config, setConfig] = useState<InterviewConfig>({
@@ -152,7 +166,7 @@ export function SetupPage({ onStart, onOpenRecord }: Props) {
         <button className="primary" onClick={start} disabled={loading}>
           开始面试
         </button>
-        {loading && <span className="muted">正在根据简历生成面试大纲…</span>}
+        {loading && <PlanTimer />}
       </div>
       {error && <div className="error">{error}</div>}
 
