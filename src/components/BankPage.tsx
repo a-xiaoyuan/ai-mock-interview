@@ -4,6 +4,7 @@ import { ROLES } from '../constants';
 import { addToBank, findDuplicate, loadBank, removeFromBank } from '../lib/bank';
 import { ResumeFileError, readResumeFile } from '../lib/resumeFile';
 import type { BankItem, Question } from '../types';
+import { Icon } from './Icon';
 
 const PLACEHOLDER = `把面经原文贴进来，记得乱也没关系，例如：
 一面（45 分钟）
@@ -112,133 +113,187 @@ export function BankPage() {
   }, [items]);
 
   return (
-    <section className="card">
-      <h2>面经题库</h2>
-      <p className="sub">把你或朋友的真实面经贴进来，AI 会整理成题目和参考要点。开始面试时，会优先从题库里挑题。题库只存在这个浏览器里。</p>
-
-      <div className="grid2 bank-meta">
+    <>
+      <div className="page-head">
         <div>
-          <label htmlFor="bank-source">
-            来源 <span className="hint">可选，例如「字节 后端 一面」</span>
-          </label>
-          <input id="bank-source" value={source} onChange={(e) => setSource(e.target.value)} maxLength={40} />
-        </div>
-        <div>
-          <label htmlFor="bank-role">适用岗位</label>
-          <select id="bank-role" value={role} onChange={(e) => setRole(e.target.value)}>
-            <option value={ANY_ROLE}>不限岗位</option>
-            {ROLES.map((r) => (
-              <option key={r}>{r}</option>
-            ))}
-          </select>
+          <h1>面经题库</h1>
+          <p>把你或朋友的真实面经贴进来，AI 会整理成题目和参考要点。开始面试时，会优先从题库里挑题。题库只存在这个浏览器里。</p>
         </div>
       </div>
 
-      <div className="label-row">
-        <label htmlFor="bank-text">面经原文</label>
-        <button type="button" className="small" onClick={() => fileInput.current?.click()}>
-          上传文件
-        </button>
-        <input ref={fileInput} type="file" accept=".pdf,.docx,.txt,.md" hidden onChange={(e) => loadFile(e.target.files?.[0])} />
-      </div>
-      <textarea id="bank-text" rows={9} placeholder={PLACEHOLDER} value={text} onChange={(e) => setText(e.target.value)} />
-
-      <div className="row bank-actions">
-        <button className="primary" onClick={extract} disabled={extracting || !text.trim()}>
-          整理成题目
-        </button>
-        {extracting && (
-          <span className="muted">
-            正在整理… 已用 {sec} 秒{sec >= 5 && '，面经越长越慢，通常 15–60 秒'}
-          </span>
-        )}
-        {saved && <span className="muted">{saved}</span>}
-      </div>
-      {error && <div className="error">{error}</div>}
-
-      {drafts && (
-        <div className="section">
-          <h3>
-            整理出 {drafts.length} 道题 <span className="muted">勾选要加入题库的题</span>
-          </h3>
-          <ul className="draft-list">
-            {drafts.map((d, i) => (
-              <li key={i} className={d.checked ? '' : 'off'}>
-                <label className="draft">
-                  <input type="checkbox" checked={d.checked} onChange={() => toggle(i)} />
-                  <span>
-                    <span className="draft-q">{d.question}</span>
-                    <span className="draft-tags">
-                      <span className="stage">{d.stage}</span>
-                      <span className="stage">{d.topic}</span>
-                      {d.duplicate && (
-                        <span className="tag" title={`题库里的：${d.duplicate}`}>
-                          题库里已有
-                        </span>
-                      )}
-                    </span>
-                    {d.points.length > 0 && <span className="muted draft-points">要点：{d.points.join('；')}</span>}
-                  </span>
+      <div className="bank">
+        <section className="card bank-add">
+          <div className="card-head">
+            <h2>
+              <Icon name="upload" />
+              添加面经
+            </h2>
+          </div>
+          <div className="block">
+            <div className="grid-2">
+              <div>
+                <label htmlFor="bank-source" className="field-label">
+                  来源 <span className="hint">可选，例如「字节 后端 一面」</span>
                 </label>
-              </li>
-            ))}
-          </ul>
-          <div className="row">
-            <button className="primary" onClick={save} disabled={!checkedCount}>
-              加入题库（{checkedCount} 题）
-            </button>
-            <button onClick={() => setDrafts(null)}>放弃</button>
-          </div>
-        </div>
-      )}
+                <input id="bank-source" value={source} onChange={(e) => setSource(e.target.value)} maxLength={40} />
+              </div>
+              <div>
+                <label htmlFor="bank-role" className="field-label">
+                  适用岗位
+                </label>
+                <select id="bank-role" value={role} onChange={(e) => setRole(e.target.value)}>
+                  <option value={ANY_ROLE}>不限岗位</option>
+                  {ROLES.map((r) => (
+                    <option key={r}>{r}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
-      <div className="section bank-list">
-        <div className="label-row">
-          <h3>已收录 {items.length} 道题</h3>
-          {items.length > 0 && (
-            <input className="compact-input" placeholder="搜索题目、知识点、来源" value={query} onChange={(e) => setQuery(e.target.value)} />
-          )}
-        </div>
-        {topics.length > 0 && (
-          <div className="topic-chips">
-            {topics.map(([t, n]) => (
-              <button key={t} type="button" className={`chip${query === t ? ' on' : ''}`} onClick={() => setQuery(query === t ? '' : t)}>
-                {t} <span className="muted">{n}</span>
+            <div className="field">
+              <div className="field-label">
+                <label htmlFor="bank-text">面经原文</label>
+                <button type="button" className="sm" onClick={() => fileInput.current?.click()}>
+                  <Icon name="upload" size={14} />
+                  上传文件
+                </button>
+                <input ref={fileInput} type="file" accept=".pdf,.docx,.txt,.md" hidden onChange={(e) => loadFile(e.target.files?.[0])} />
+              </div>
+              <textarea id="bank-text" rows={9} placeholder={PLACEHOLDER} value={text} onChange={(e) => setText(e.target.value)} />
+            </div>
+
+            <div className="extract-bar">
+              <button className="primary" onClick={extract} disabled={extracting || !text.trim()}>
+                {extracting ? <span className="spinner" /> : <Icon name="layers" size={15} />}
+                整理成题目
               </button>
-            ))}
+              {extracting && (
+                <span className="small muted" role="status">
+                  正在整理… 已用 <span className="num">{sec}</span> 秒{sec >= 5 && '，面经越长越慢，通常 15–60 秒'}
+                </span>
+              )}
+              {saved && (
+                <span className="file-status ok" style={{ marginTop: 0 }} role="status">
+                  <Icon name="checkCircle" size={14} />
+                  {saved}
+                </span>
+              )}
+            </div>
+            {error && (
+              <div className="error-box" role="alert">
+                <Icon name="alert" size={15} />
+                <span>{error}</span>
+              </div>
+            )}
           </div>
-        )}
-        {items.length === 0 ? (
-          <p className="muted">题库还是空的。贴一份面经试试。</p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>题目</th>
-                <th>知识点</th>
-                <th>来源</th>
-                <th>已考</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((it) => (
-                <tr key={it.id}>
-                  <td title={it.points.length ? `要点：${it.points.join('；')}` : undefined}>{it.question}</td>
-                  <td className="nowrap">{it.topic}</td>
-                  <td className="muted">{[it.source, it.role].filter(Boolean).join(' · ') || '—'}</td>
-                  <td>{it.used}</td>
-                  <td>
-                    <button className="small" onClick={() => remove(it.id)} aria-label={`删除：${it.question}`}>
-                      删除
-                    </button>
-                  </td>
-                </tr>
+
+          {drafts && (
+            <>
+              <div className="card-head" style={{ borderTop: '1px solid var(--line)' }}>
+                <h2>
+                  整理出 {drafts.length} 道题 <span className="hint">勾选要加入题库的题</span>
+                </h2>
+              </div>
+              <ul className="draft-list">
+                {drafts.map((d, i) => (
+                  <li key={i} className={d.checked ? '' : 'off'}>
+                    <label className="draft">
+                      <input type="checkbox" checked={d.checked} onChange={() => toggle(i)} />
+                      <span>
+                        <span className="draft-q">{d.question}</span>
+                        <span className="draft-tags">
+                          <span className="chip">{d.stage}</span>
+                          <span className="chip">{d.topic}</span>
+                          {d.duplicate && (
+                            <span className="chip warn" title={`题库里的：${d.duplicate}`}>
+                              题库里已有
+                            </span>
+                          )}
+                        </span>
+                        {d.points.length > 0 && <span className="draft-points">要点：{d.points.join('；')}</span>}
+                      </span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+              <div className="card-foot" style={{ justifyContent: 'flex-end' }}>
+                <button className="ghost" onClick={() => setDrafts(null)}>
+                  放弃
+                </button>
+                <button className="primary" onClick={save} disabled={!checkedCount}>
+                  <Icon name="check" size={15} />
+                  加入题库（{checkedCount} 题）
+                </button>
+              </div>
+            </>
+          )}
+        </section>
+
+        <section className="card bank-list">
+          <div className="card-head">
+            <h2>
+              <Icon name="library" />
+              已收录 <span className="num">{items.length}</span> 道题
+            </h2>
+            {items.length > 0 && (
+              <div className="search">
+                <Icon name="search" size={14} />
+                <input placeholder="搜索题目、知识点、来源" aria-label="搜索题库" value={query} onChange={(e) => setQuery(e.target.value)} />
+              </div>
+            )}
+          </div>
+          {topics.length > 0 && (
+            <div className="topic-chips">
+              {topics.map(([t, n]) => (
+                <button key={t} type="button" aria-pressed={query === t} onClick={() => setQuery(query === t ? '' : t)}>
+                  {t} <span className="n">{n}</span>
+                </button>
               ))}
-            </tbody>
-          </table>
-        )}
+            </div>
+          )}
+          {items.length === 0 ? (
+            <div className="empty">
+              <Icon name="library" size={28} style={{ margin: '0 auto 10px', color: 'var(--faint)' }} />
+              题库还是空的。贴一份面经试试。
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="bank-table">
+                <thead>
+                  <tr>
+                    <th>题目</th>
+                    <th>知识点</th>
+                    <th>来源</th>
+                    <th>已考</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((it) => (
+                    <tr key={it.id}>
+                      <td className="q-cell">
+                        {it.question}
+                        {it.points.length > 0 && <div className="q-points">要点：{it.points.join('；')}</div>}
+                      </td>
+                      <td className="nowrap">
+                        <span className="chip">{it.topic}</span>
+                      </td>
+                      <td className="muted">{[it.source, it.role].filter(Boolean).join(' · ') || '—'}</td>
+                      <td className="num">{it.used}</td>
+                      <td>
+                        <button className="sm ghost danger icon-btn" onClick={() => remove(it.id)} aria-label={`删除：${it.question}`} title="删除">
+                          <Icon name="trash" size={15} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {filtered.length === 0 && <div className="empty">没有匹配的题目。</div>}
+            </div>
+          )}
+        </section>
       </div>
-    </section>
+    </>
   );
 }

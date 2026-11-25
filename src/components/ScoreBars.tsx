@@ -15,7 +15,7 @@ export function ScoreBars({ scores, suffix = '', large = false }: Props) {
         <div className="score-row" key={key}>
           <span>{name}</span>
           <div className="bar">
-            <b style={{ width: `${(scores[key] / 5) * 100}%` }} />
+            <b className={scores[key] < 2.5 ? 'low' : scores[key] < 3.5 ? 'mid' : ''} style={{ width: `${(scores[key] / 5) * 100}%` }} />
           </div>
           <span className="score-num">
             {scores[key]}

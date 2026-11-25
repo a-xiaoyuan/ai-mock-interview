@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPlan, getConfig } from './api';
 import { BankPage } from './components/BankPage';
+import { Icon, LogoMark } from './components/Icon';
 import { InterviewPage } from './components/InterviewPage';
 import type { StartPractice } from './components/PracticeButton';
 import { ReportPage } from './components/ReportPage';
@@ -28,14 +29,18 @@ export default function App() {
       .catch(() => setServerError(true));
   }, []);
 
-  function goHome() {
+  /** 面试进行中离开要先确认 */
+  function go(next: View) {
     if (view.name === 'interview' && !confirm('面试还没结束，确定离开？')) return;
-    setView({ name: 'setup' });
+    setView(next);
+    window.scrollTo(0, 0);
   }
+  const goHome = () => go({ name: 'setup' });
 
   function startInterview(config: InterviewConfig, plan: Plan) {
     markUsed(plan.questions.flatMap((q) => (q.from ? [q.from] : [])));
     setView({ name: 'interview', config, plan, key: Date.now() });
+    window.scrollTo(0, 0);
   }
 
   const startPractice: StartPractice = async ({ topic, role, level }) => {
@@ -47,16 +52,34 @@ export default function App() {
   function onDone(record: InterviewRecord) {
     saveRecord(record);
     setView({ name: 'report', record });
+    window.scrollTo(0, 0);
   }
 
   return (
     <>
       <header className="topbar">
-        <h1>AI 模拟面试</h1>
-        <ModeBadge server={server} error={serverError} />
+        <button className="brand" onClick={goHome} aria-label="AI 模拟面试，回到首页">
+          <LogoMark />
+          <span>AI 模拟面试</span>
+        </button>
+        <nav className="nav" aria-label="主导航">
+          <button aria-current={view.name === 'setup' ? 'page' : undefined} onClick={goHome}>
+            <Icon name="play" />
+            开始面试
+          </button>
+          <button aria-current={view.name === 'bank' ? 'page' : undefined} onClick={() => go({ name: 'bank' })}>
+            <Icon name="library" />
+            面经题库
+          </button>
+        </nav>
         <span className="spacer" />
-        {view.name === 'setup' && <button onClick={() => setView({ name: 'bank' })}>面经题库</button>}
-        {view.name !== 'setup' && <button onClick={goHome}>返回首页</button>}
+        <ModeBadge server={server} error={serverError} />
+        {(view.name === 'interview' || view.name === 'report') && (
+          <button className="sm ghost back" onClick={goHome}>
+            <Icon name="arrowLeft" />
+            返回首页
+          </button>
+        )}
       </header>
       <main>
         {view.name === 'setup' && (
@@ -65,22 +88,32 @@ export default function App() {
             onChange={(c) => {
               lastConfig.current = c;
             }}
-            onOpenBank={() => setView({ name: 'bank' })}
+            onOpenBank={() => go({ name: 'bank' })}
             onStart={startInterview}
             onPractice={startPractice}
-            onOpenRecord={(record) => setView({ name: 'report', record })}
+            onOpenRecord={(record) => go({ name: 'report', record })}
           />
         )}
         {view.name === 'bank' && <BankPage />}
         {view.name === 'interview' && <InterviewPage key={view.key} config={view.config} plan={view.plan} onDone={onDone} />}
-        {view.name === 'report' && <ReportPage record={view.record} onAgain={() => setView({ name: 'setup' })} onPractice={startPractice} />}
+        {view.name === 'report' && <ReportPage record={view.record} onAgain={goHome} onPractice={startPractice} />}
       </main>
     </>
   );
 }
 
 function ModeBadge({ server, error }: { server: ServerConfig | null; error: boolean }) {
-  if (error) return <span className="badge warn">服务未连接</span>;
-  if (!server) return <span className="badge">连接中…</span>;
-  return server.mock ? <span className="badge warn">Mock 模式 · 未配置模型</span> : <span className="badge">模型：{server.model}</span>;
+  const [cls, text] = error
+    ? ['bad', '服务未连接']
+    : !server
+      ? ['', '连接中…']
+      : server.mock
+        ? ['warn', 'Mock 模式 · 未配置模型']
+        : ['ok', `模型：${server.model}`];
+  return (
+    <span className={`status ${cls}`} title={text}>
+      <i />
+      <span className="status-text">{text}</span>
+    </span>
+  );
 }

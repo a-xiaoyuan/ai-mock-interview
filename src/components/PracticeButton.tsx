@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { errorMessage } from '../api';
+import { Icon } from './Icon';
 
 export interface PracticeTarget {
   topic: string;
@@ -35,8 +36,9 @@ export function PracticeButton({ target, onPractice }: { target: PracticeTarget;
 
   return (
     <span className="practice">
-      <button type="button" className="small" onClick={start} disabled={loading} title={`围绕「${target.topic}」出 3 道题`}>
-        {loading ? `出题中… ${sec} 秒` : '专项练习'}
+      <button type="button" className="sm soft" onClick={start} disabled={loading} title={`围绕「${target.topic}」出 3 道题`}>
+        {loading ? <span className="spinner" /> : <Icon name="target" size={14} />}
+        {loading ? <span className="num">出题中… {sec} 秒</span> : '专项练习'}
       </button>
       {error && <span className="error-text practice-error">{error}</span>}
     </span>
