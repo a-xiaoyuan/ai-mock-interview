@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { MAX_DEPTH } from '../constants';
 import { useInterview } from '../hooks/useInterview';
+import { useDictation, useSpeaker } from '../hooks/useSpeech';
 import type { InterviewConfig, InterviewRecord, Plan } from '../types';
 import { Icon } from './Icon';
 import { ScoreBars } from './ScoreBars';
@@ -19,6 +20,30 @@ export function InterviewPage({ config, plan, onDone }: Props) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const questions = plan.questions;
   const current = questions[iv.qi];
+  const speaker = useSpeaker();
+  // 识别出的整句接到草稿后面；语音识别不带标点，句与句之间补一个逗号
+  const dict = useDictation((text) => setDraft((d) => (!d.trim() ? text : /[\p{P}\s]$/u.test(d) ? d + text : `${d}，${text}`)));
+
+  // 面试官说完一句（流式输出结束）就朗读；朗读关闭时只记下位置，打开后不补读旧的
+  const interviewerTurns = iv.chains.flat().filter((t) => t.role === 'interviewer');
+  const spokenCount = useRef(0);
+  useEffect(() => {
+    if (iv.streaming !== null || interviewerTurns.length <= spokenCount.current) return;
+    spokenCount.current = interviewerTurns.length;
+    speaker.speak(interviewerTurns[interviewerTurns.length - 1].text);
+  }, [interviewerTurns.length, iv.streaming]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function toggleSpeaker() {
+    // 打开时把面试官最近一句读一遍，方便确认声音
+    if (!speaker.enabled && interviewerTurns.length) speaker.speak(interviewerTurns[interviewerTurns.length - 1].text, true);
+    speaker.toggle();
+  }
+
+  function toggleMic() {
+    if (dict.listening) return dict.stop();
+    speaker.stop(); // 开始说话时停止朗读，免得把面试官的声音也录进去
+    dict.start();
+  }
 
   // 新消息或流式输出时滚到底部
   useEffect(() => {
@@ -33,6 +58,8 @@ export function InterviewPage({ config, plan, onDone }: Props) {
   async function send() {
     const text = draft.trim();
     if (!text || iv.busy) return;
+    dict.cancel();
+    speaker.stop();
     setDraft('');
     const ok = await iv.answer(text);
     if (!ok) setDraft(text);
@@ -45,7 +72,15 @@ export function InterviewPage({ config, plan, onDone }: Props) {
     }
   }
 
+  function skip() {
+    dict.cancel();
+    speaker.stop();
+    iv.skip();
+  }
+
   function end() {
+    dict.cancel();
+    speaker.stop();
     if (confirm('确定结束面试并生成报告？未回答的题会记为跳过。')) iv.end();
   }
 
@@ -71,6 +106,17 @@ export function InterviewPage({ config, plan, onDone }: Props) {
               ))}
             </span>
           </span>
+          {speaker.supported && (
+            <button
+              className={`sm ghost icon-btn speak-toggle${speaker.enabled ? ' on' : ''}`}
+              onClick={toggleSpeaker}
+              aria-pressed={speaker.enabled}
+              aria-label="朗读面试官的问题"
+              title={speaker.enabled ? '朗读已打开，点击关闭' : '朗读面试官的问题'}
+            >
+              <Icon name={speaker.enabled ? 'volume' : 'volumeOff'} size={16} />
+            </button>
+          )}
         </div>
 
         <div className="msgs" ref={msgsRef}>
@@ -108,12 +154,18 @@ export function InterviewPage({ config, plan, onDone }: Props) {
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={onKeyDown}
-              placeholder="输入你的回答…（Ctrl + Enter 发送）"
+              placeholder={dict.listening ? '正在听你说，说完点麦克风结束，可以再修改后发送…' : '输入你的回答…（Ctrl + Enter 发送）'}
               aria-label="你的回答"
               disabled={iv.busy}
             />
+            {dict.listening && (
+              <div className="interim" role="status">
+                <span className="rec-dot" />
+                {dict.interim || '正在听…'}
+              </div>
+            )}
             <div className="composer-actions">
-              <button className="sm ghost" onClick={iv.skip} disabled={iv.busy}>
+              <button className="sm ghost" onClick={skip} disabled={iv.busy}>
                 <Icon name="skip" size={14} />
                 跳过本题
               </button>
@@ -124,11 +176,30 @@ export function InterviewPage({ config, plan, onDone }: Props) {
               <span className="kbd-hint">
                 <kbd>Ctrl</kbd> + <kbd>Enter</kbd> 发送
               </span>
+              <button
+                className={`icon-btn mic${dict.listening ? ' on' : ''}`}
+                onClick={toggleMic}
+                disabled={iv.busy || !dict.supported}
+                aria-pressed={dict.listening}
+                aria-label={dict.listening ? '结束语音输入' : '语音输入'}
+                title={dict.supported ? (dict.listening ? '说完了，结束语音输入' : '语音输入') : '这个浏览器不支持语音输入，可以用 Edge 或 Chrome'}
+              >
+                <Icon name={dict.listening ? 'stop' : 'mic'} size={16} />
+              </button>
               <button className="primary icon-btn" onClick={send} disabled={iv.busy || !draft.trim()} aria-label="发送" title="发送">
                 <Icon name="send" size={17} />
               </button>
             </div>
           </div>
+          {dict.error && (
+            <div className="notice mic-error" role="alert">
+              <Icon name="alert" size={14} />
+              {dict.error}
+              <button className="link small" onClick={dict.clearError}>
+                知道了
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
