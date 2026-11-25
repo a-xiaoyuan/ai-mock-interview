@@ -8,6 +8,7 @@
 //   npm run eval -- --only cache-strong,bplus-wrong
 //   npm run eval -- --save-baseline   把这次的平均分保存为基线（evals/baseline.json）
 //   npm run eval -- --base http://127.0.0.1:3000
+//   npm run eval -- --pack java-backend-campus   评分时带上题包的评分要点，检查它会不会把通用评分带偏
 //
 // 退出码：有用例全部失败或对比不成立时为 1，方便放进 CI；只是不稳定或有漂移时为 0，但会提示。
 
@@ -36,6 +37,11 @@ const args = parseArgs(process.argv.slice(2));
 const BASE = (args.base || process.env.EVAL_BASE || `http://127.0.0.1:${process.env.PORT || 3000}`).replace(/\/+$/, '');
 const RUNS = Math.max(1, Number(args.runs) || 3);
 const CONCURRENCY = Math.max(1, Number(args.concurrency) || 2); // 免费模型限流，默认只并发 2 个
+const PACK = typeof args.pack === 'string' ? args.pack : '';
+if (PACK && args['save-baseline']) {
+  console.error('基线只记录不带题包的通用评分，--pack 和 --save-baseline 不能一起用。');
+  process.exit(2);
+}
 
 function parseArgs(argv) {
   const out = {};
@@ -64,7 +70,7 @@ async function judge(q, chain, depth) {
   const res = await fetch(`${BASE}/api/judge`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ q, chain, depth }),
+    body: JSON.stringify({ q, chain, depth, pack: PACK }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
@@ -113,7 +119,11 @@ async function main() {
     throw new Error(`连不上 ${BASE}，请先启动服务（npm start 或 npm run dev）`);
   }
   if (config.mock) console.warn('⚠ 服务处于 mock 模式（按回答长度打分），结果没有参考意义。请先在 .env 配置模型。\n');
-  console.log(`模型：${config.model}  用例：${cases.length} 个 × ${RUNS} 次  并发：${CONCURRENCY}\n`);
+  if (PACK) {
+    const packs = await (await fetch(`${BASE}/api/packs`)).json();
+    if (!packs.some((p) => p.id === PACK)) throw new Error(`服务端没有题包 ${PACK}（可用：${packs.map((p) => p.id).join('、') || '无'}）`);
+  }
+  console.log(`模型：${config.model}  用例：${cases.length} 个 × ${RUNS} 次  并发：${CONCURRENCY}${PACK ? `  题包：${PACK}` : ''}\n`);
 
   const started = Date.now();
   const tasks = cases.flatMap((c) =>
@@ -190,6 +200,7 @@ async function main() {
     const base = JSON.parse(fs.readFileSync(BASELINE_FILE, 'utf8'));
     console.log(`\n与基线对比（基线：${base.model}，${base.at.slice(0, 10)}）`);
     if (base.model !== config.model) console.log(`  注意：基线用的模型是 ${base.model}，这次是 ${config.model}`);
+    if (PACK) console.log('  注意：基线是不带题包的通用评分，这次带了题包的评分要点，有变化是正常的，重点看变化方向是否符合题包的本意');
     let shown = 0;
     for (const c of cases) {
       const b = base.cases[c.id];

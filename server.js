@@ -6,6 +6,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { loadPacks, getPack, resolvePack } = require('./lib/packs');
 
 // ---------- 配置 ----------
 loadEnv(path.join(__dirname, '.env'));
@@ -37,17 +38,20 @@ const STYLE = {
 };
 
 const PROMPTS = {
-  planner: ({ role, level, resume, jd, count, focus, bank }) => [
+  planner: ({ role, level, resume, jd, count, focus, bank, pack }) => [
     {
       role: 'system',
       content:
         '你是一位资深技术面试官，负责为一场模拟面试制定大纲。只输出 JSON，不要任何解释或 markdown。\n' +
-        'JSON 格式：{"questions":[{"stage":"项目深挖|八股|场景题","topic":"知识点短语","question":"主问题","points":["参考要点1","参考要点2","参考要点3"],"from":"选自面经题库时填编号如 B3，否则填空字符串"}]}\n' +
+        'JSON 格式：{"questions":[{"stage":"项目深挖|八股|场景题|算法","topic":"知识点短语","question":"主问题","points":["参考要点1","参考要点2","参考要点3"],"from":"选自面经题库填编号如 B3，选自题包填编号如 P2，否则填空字符串"}]}\n' +
+        (pack ? `本场使用题包「${pack.name}」，以下是这类面试的出题指引，必须遵守：\n${pack.guide}\n\n` : '') +
         '规则：\n' +
         (focus
           ? `- 这是一场针对「${focus}」的专项练习，候选人之前在这个知识点上反复答得不好。共 ${count} 道题，全部围绕这个知识点，从不同角度考察：先考核心概念和原理，再考边界和取舍，最后一道是场景题；如果简历里有相关项目，其中一道结合项目来问。\n` +
             '- topic 写这道题具体考察的子知识点。\n'
-          : `- 共 ${count} 道题；约一半来自候选人简历里的具体项目（引用项目名和技术点），其余为与岗位和 JD 相关的八股和场景题。\n`) +
+          : resume
+            ? `- 共 ${count} 道题；约一半来自候选人简历里的具体项目（引用项目名和技术点），其余为与岗位和 JD 相关的八股和场景题。\n`
+            : `- 共 ${count} 道题；候选人没有提供简历，不要出项目深挖题，也不要虚构候选人做过的项目，全部出与岗位和 JD 相关的八股题和场景题（场景题可以设定一个通用业务背景，但不能说成是候选人的项目）。\n`) +
         '- 题目由浅入深；每题只问一件事，不要一题多问。\n' +
         '- points 写 3-5 条优秀回答应覆盖的要点，供评分对照，要准确。' +
         (bank.length
@@ -56,6 +60,13 @@ const PROMPTS = {
               ? `只选与「${focus}」相关的题，有几道选几道，不够的再自己出。`
               : `从中挑选与岗位相关的题，约占一半（${Math.ceil(count / 2)} 道左右，题库不够就全用）；优先挑「已考次数」少的。`) +
             '选用的题保留原意，可以稍作口语化改写；题库给了参考要点的可以沿用并补充；选用的题 from 填对应编号，自己出的题 from 填空字符串。'
+          : '') +
+        (pack && pack.questions.length
+          ? '\n- 用户消息里附有题包的精选题（编号 P1、P2…，参考要点经过人工校对）。' +
+            (focus
+              ? `只选与「${focus}」相关的题。`
+              : `八股和场景题优先从题包里选${bank.length ? '（面经题库的题优先级更高，题包补足其余）' : ''}，挑和简历、JD 相关的；`) +
+            '选用的题 from 填对应编号，题目可以稍作口语化改写，但不要改变考察点。'
           : ''),
     },
     {
@@ -67,6 +78,9 @@ const PROMPTS = {
             bank
               .map((b, i) => `B${i + 1}【${b.topic}】${b.question}（已考 ${b.used} 次）${b.points.length ? `\n  参考要点：${b.points.join('；')}` : ''}`)
               .join('\n')
+          : '') +
+        (pack && pack.questions.length
+          ? '\n\n题包精选题：\n' + pack.questions.map((q, i) => `P${i + 1}【${q.stage}·${q.topic}】${q.question}`).join('\n')
           : ''),
     },
   ],
@@ -107,7 +121,7 @@ const PROMPTS = {
     },
   ],
 
-  judge: ({ q, chain, depth }) => [
+  judge: ({ q, chain, depth, pack }) => [
     {
       role: 'system',
       content:
@@ -121,7 +135,8 @@ const PROMPTS = {
         '追问规则：回答好 → 往深挖（原理/边界/为什么不用替代方案）；回答模糊 → 要具体（数据量、QPS、个人负责部分）；答错或不会 → 给一次提示性追问，再不会就 next。\n' +
         'direction 要求：只写一个点，一句话，描述“要考察什么”，不要写出答案、不要列出可选的技术方案名（面试官会照着问，写了等于泄题）；不要重复问答链里已经问过的点。' +
         '提示性追问只指出思考方向（例如“从并发写入的先后顺序想想会出什么问题”），不能说出方案本身。\n' +
-        `已追问 ${depth} 层，上限 ${MAX_DEPTH} 层，达到上限必须 next。回答已经很完整也可以 next。评分要严格，不要被冗长但空洞的回答骗到。`,
+        `已追问 ${depth} 层，上限 ${MAX_DEPTH} 层，达到上限必须 next。回答已经很完整也可以 next。评分要严格，不要被冗长但空洞的回答骗到。` +
+        (pack ? `\n\n这场面试使用题包「${pack.name}」，以下是这个方向的评分要点，打分时一并参照：\n${pack.rubric}` : ''),
     },
     {
       role: 'user',
@@ -260,7 +275,7 @@ function normQuestion(q) {
 }
 
 /** bank 为本次传给模型的题库；模型用 B1、B2… 引用，这里换回题库条目的 id */
-function normPlan(p, count, bank = []) {
+function normPlan(p, count, bank = [], pack = null) {
   const used = new Set();
   const qs = (p.questions || [])
     .filter((q) => q && q.question)
@@ -269,6 +284,13 @@ function normPlan(p, count, bank = []) {
       const m = String(q.from || '').match(/B(\d+)/i);
       const b = m && bank[Number(m[1]) - 1];
       const out = normQuestion(q);
+      // 选自题包的题，参考要点用题包里人工校对过的版本
+      const pm = String(q.from || '').match(/P(\d+)/i);
+      const pq = pm && pack && pack.questions[Number(pm[1]) - 1];
+      if (pq) {
+        out.points = pq.points;
+        out.pack = pack.id;
+      }
       if (b && !used.has(b.id)) {
         used.add(b.id);
         out.from = b.id;
@@ -304,7 +326,14 @@ const mock = {
       .map((question) => ({ stage: '八股', topic: '面经', question, points: [] }));
     return { questions };
   },
-  plan({ role, count, focus, bank: library = [] }) {
+  plan({ role, count, focus, bank: library = [], pack = null }) {
+    if (pack && pack.questions.length && !focus) {
+      // mock：后一半题直接取题包里的题
+      const n = Math.min(Math.floor(count / 2), pack.questions.length);
+      const picked = pack.questions.slice(0, n).map((q, i) => ({ ...q, from: `P${i + 1}` }));
+      const rest = this.plan({ role, count: count - n, focus, bank: library }).questions;
+      return { questions: [...rest, ...picked] };
+    }
     if (library.length && !focus) {
       // mock：前一半题直接取题库里考得最少的题
       const picked = library
@@ -376,13 +405,18 @@ async function streamText(res, text) {
 const routes = {
   'GET /api/config': async () => ({ mock: MOCK, model: MOCK ? 'mock' : CFG.model }),
 
+  // 题包列表（只返回概要，指引和评分要点留在服务端）
+  'GET /api/packs': async () =>
+    loadPacks().map((p) => ({ id: p.id, name: p.name, description: p.description, version: p.version, author: p.author, roles: p.roles, levels: p.levels, questionCount: p.questions.length })),
+
   'POST /api/plan': async (b) => {
     const count = Math.max(2, Math.min(10, Number(b.count) || 5));
     const focus = String(b.focus || '').trim().slice(0, 60);
     const bank = normBank(b.bank);
-    const args = { role: String(b.role || '后端开发'), level: String(b.level || '校招'), resume: String(b.resume || '').slice(0, 8000), jd: String(b.jd || '').slice(0, 4000), count, focus, bank };
+    const pack = resolvePack(String(b.pack || ''), String(b.role || ''), String(b.level || ''));
+    const args = { role: String(b.role || '后端开发'), level: String(b.level || '校招'), resume: String(b.resume || '').slice(0, 8000), jd: String(b.jd || '').slice(0, 4000), count, focus, bank, pack };
     const raw = MOCK ? mock.plan(args) : await chatJSON(PROMPTS.planner(args), { model: CFG.model, temperature: 0.7 });
-    return normPlan(raw, count, bank);
+    return { ...normPlan(raw, count, bank, pack), pack: pack ? { id: pack.id, name: pack.name } : null };
   },
 
   'POST /api/extract': async (b) => {
@@ -414,7 +448,7 @@ const routes = {
 
   'POST /api/judge': async (b) => {
     const depth = Number(b.depth) || 0;
-    const args = { q: b.q, chain: b.chain || [], depth };
+    const args = { q: b.q, chain: b.chain || [], depth, pack: getPack(String(b.pack || '')) };
     const raw = MOCK ? mock.judge(args) : await chatJSON(PROMPTS.judge(args), { model: CFG.model, temperature: 0 });
     return normJudge(raw, depth);
   },

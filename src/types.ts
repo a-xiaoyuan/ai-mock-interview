@@ -14,6 +14,8 @@ export interface InterviewConfig {
   focus?: string;
   /** 是否从面经题库里选题，默认开启 */
   useBank?: boolean;
+  /** 题包选择：'auto' 按岗位和级别自动匹配（默认），'none' 不用，其余为题包 id */
+  pack?: string;
 }
 
 export interface Question {
@@ -23,6 +25,8 @@ export interface Question {
   points: string[];
   /** 选自面经题库时为题库条目 id */
   from?: string;
+  /** 选自题包时为题包 id */
+  pack?: string;
 }
 
 /** 面经题库里的一道题 */
@@ -42,6 +46,8 @@ export interface BankItem {
 
 export interface Plan {
   questions: Question[];
+  /** 这场面试实际使用的题包 */
+  pack?: { id: string; name: string } | null;
 }
 
 export interface Turn {
@@ -87,6 +93,20 @@ export interface InterviewRecord {
   report: Review;
   total: number;
   focus?: string;
+  /** 使用的题包名称 */
+  pack?: string;
+}
+
+/** /api/packs 返回的题包概要 */
+export interface PackSummary {
+  id: string;
+  name: string;
+  description: string;
+  version: number;
+  author: string;
+  roles: string[];
+  levels: string[];
+  questionCount: number;
 }
 
 export type AskMode = 'open' | 'follow' | 'next';

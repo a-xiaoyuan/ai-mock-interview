@@ -203,3 +203,8 @@ button.link:hover { text-decoration: underline; }
 .bank-list td, .bank-list th { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .bank-list th { color: var(--muted); font-weight: 600; font-size: 12px; }
 .nowrap { white-space: nowrap; }
+
+/* 题包 */
+.pack-row { display: flex; align-items: center; gap: 10px; margin: -4px 0 16px; flex-wrap: wrap; }
+.pack-row label { margin: 0; }
+.pack-line { margin-top: 6px; font-size: 12px; }

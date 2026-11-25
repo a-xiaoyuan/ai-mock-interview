@@ -22,7 +22,7 @@ export function ReportPage({ record, onAgain, onPractice }: Props) {
         <div>
           <div className="muted report-meta">
             {record.focus && <span className="tag">专项 · {record.focus}</span>}
-            {record.role} · {record.level} · {new Date(record.at).toLocaleString()}
+            {record.role} · {record.level}{record.pack ? ` · 题包：${record.pack}` : ''} · {new Date(record.at).toLocaleString()}
           </div>
           <ScoreBars scores={dimensionAverages(items)} suffix=" / 5" large />
         </div>

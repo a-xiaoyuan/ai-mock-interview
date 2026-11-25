@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
-import { createPlan, errorMessage } from '../api';
+import { createPlan, errorMessage, getPacks } from '../api';
 import { COUNTS, LEVELS, ROLES } from '../constants';
 import { loadBank } from '../lib/bank';
 import { loadHistory } from '../lib/history';
 import { ACCEPTED_RESUME_TYPES, ResumeFileError, readResumeFile } from '../lib/resumeFile';
-import type { InterviewConfig, InterviewRecord, Plan } from '../types';
+import type { InterviewConfig, InterviewRecord, PackSummary, Plan } from '../types';
 import { GrowthPanel } from './GrowthPanel';
 import type { StartPractice } from './PracticeButton';
 
@@ -53,6 +53,12 @@ export function SetupPage({ initial, onStart, onPractice, onChange, onOpenBank, 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [history] = useState(loadHistory);
+  const [packs, setPacks] = useState<PackSummary[]>([]);
+  useEffect(() => {
+    getPacks()
+      .then(setPacks)
+      .catch(() => setPacks([])); // 拿不到题包列表不影响面试
+  }, []);
   const [parsing, setParsing] = useState(false);
   const [fileStatus, setFileStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -61,6 +67,14 @@ export function SetupPage({ initial, onStart, onPractice, onChange, onOpenBank, 
   useEffect(() => {
     onChange(config);
   }, [config]); // eslint-disable-line react-hooks/exhaustive-deps
+  const packSel = config.pack ?? 'auto';
+  // 与服务端 resolvePack 的规则一致：按岗位和级别匹配第一个题包
+  const activePack =
+    packSel === 'none'
+      ? null
+      : packSel === 'auto'
+        ? packs.find((p) => p.roles.includes(config.role) && (!p.levels.length || p.levels.includes(config.level))) ?? null
+        : packs.find((p) => p.id === packSel) ?? null;
   const bankCount = useMemo(() => loadBank().filter((it) => !it.role || it.role === config.role).length, [config.role]);
 
   const set = <K extends keyof InterviewConfig>(key: K, value: InterviewConfig[K]) => setConfig((c) => ({ ...c, [key]: value }));
@@ -139,6 +153,28 @@ export function SetupPage({ initial, onStart, onPractice, onChange, onOpenBank, 
           </select>
         </div>
       </div>
+
+      {packs.length > 0 && (
+        <div className="pack-row">
+          <label htmlFor="pack">题包</label>
+          <select id="pack" className="compact" value={packSel} onChange={(e) => set('pack', e.target.value)}>
+            <option value="auto">按岗位自动匹配</option>
+            <option value="none">不使用题包</option>
+            {packs.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <span className="muted">
+            {activePack
+              ? `${packSel === 'auto' ? '将使用「' + activePack.name + '」：' : ''}${activePack.description}（${activePack.questionCount} 道精选题）`
+              : packSel === 'auto'
+                ? '这个岗位和级别还没有题包，按通用方式出题。'
+                : '按通用方式出题。'}
+          </span>
+        </div>
+      )}
 
       <div className="grid2">
         <div>

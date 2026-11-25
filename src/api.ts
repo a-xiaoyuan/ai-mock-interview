@@ -1,5 +1,5 @@
 import { bankPoolFor } from './lib/bank';
-import type { AskMode, InterviewConfig, InterviewStyle, Judgement, Plan, Question, ReportItem, Review, ServerConfig, Turn } from './types';
+import type { AskMode, InterviewConfig, PackSummary, InterviewStyle, Judgement, Plan, Question, ReportItem, Review, ServerConfig, Turn } from './types';
 
 async function request<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
@@ -23,6 +23,7 @@ export function createPlan(config: InterviewConfig) {
     resume: config.resume.trim(),
     jd: config.jd.trim(),
     count: config.count,
+    pack: config.pack ?? 'auto',
     focus: config.focus,
     bank: bank.map(({ id, question, topic, points, used }) => ({ id, question, topic, points, used })),
   });
@@ -32,7 +33,9 @@ export function createPlan(config: InterviewConfig) {
 export const extractQuestions = (body: { text: string; role: string; existing: { id: string; question: string; topic: string }[] }) =>
   request<{ questions: (Question & { duplicateOf?: string })[] }>('/api/extract', body);
 
-export const judgeAnswer = (body: { q: Question; chain: Turn[]; depth: number }) => request<Judgement>('/api/judge', body);
+export const getPacks = () => request<PackSummary[]>('/api/packs');
+
+export const judgeAnswer = (body: { q: Question; chain: Turn[]; depth: number; pack?: string }) => request<Judgement>('/api/judge', body);
 
 export const createReview = (body: { role: string; level: string; items: ReportItem[]; focus?: string; knownTopics?: string[] }) => request<Review>('/api/report', body);
 

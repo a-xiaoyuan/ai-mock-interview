@@ -10,6 +10,7 @@
 - **复盘报告**：给出总分、各维度得分、最需要补的 3 个弱项及补法，并可逐题回看问答和参考要点。
 - **能力成长**：首页展示总分趋势、各维度相比之前的变化，以及反复出现的弱项，可按岗位筛选。
 - **专项练习**：针对反复出现的弱项，一键出 3 道围绕该知识点的题，并跟踪练习后的得分。
+- **Skill 题包**：用一个 Markdown 文件描述“某类面试怎么面”——出题指引、评分要点和精选题，按岗位和级别自动选用。内置 Java 后端校招、前端校招两个题包，欢迎贡献更多方向，见 [packs/README.md](packs/README.md)。
 - **面经题库**：粘贴或上传真实面经，AI 整理成题目和参考要点，并标出与题库重复的题；开始面试时优先从题库里挑题，考得少的优先。
 - **任意模型**：支持所有 OpenAI 兼容接口，包括 DeepSeek、通义千问、Kimi，也可以接你自建的模型网关。
 - **轻量**：前端 React + Vite，后端是零依赖的 Node 服务，不需要数据库。
@@ -106,6 +107,8 @@ API Key 只保存在服务端，不会发送到浏览器。
 ```
 .
 ├── server.js                  # 后端：API、Agent Prompt、模型调用、mock 模式，生产环境同时托管 dist/
+├── lib/packs.js               # 题包的解析、校验与加载（后端和校验脚本共用）
+├── packs/                     # Skill 题包（Markdown），格式与贡献方式见 packs/README.md
 ├── src/
 │   ├── App.tsx                # 页面切换：配置 → 面试 → 报告
 │   ├── api.ts                 # 后端接口与流式读取
@@ -114,7 +117,7 @@ API Key 只保存在服务端，不会发送到浏览器。
 │   ├── lib/                   # 计分、历史记录、成长统计、简历文件解析（pdf.js / mammoth，在浏览器本地完成）
 │   └── types.ts
 ├── evals/                     # 评分回归集：judge-cases.json 用例、baseline.json 基线
-├── scripts/eval-judge.mjs     # 评分回归脚本（npm run eval）
+├── scripts/                   # eval-judge.mjs 评分回归（npm run eval）、check-packs.cjs 题包校验
 ├── index.html                 # Vite 入口
 ├── vite.config.mts            # 开发时把 /api 转发到 3000 端口
 └── .env.example               # 配置模板
@@ -127,6 +130,7 @@ API Key 只保存在服务端，不会发送到浏览器。
 | `npm start` | 启动后端，并托管已构建的前端 |
 | `npm run typecheck` | 只做 TypeScript 类型检查 |
 | `npm run eval` | 评分回归：需先启动服务，用固定问答检查评分是否跑偏 |
+| `npm run check-packs` | 检查 `packs/` 下题包的格式 |
 
 面试历史和面经题库都保存在浏览器的 localStorage 里，服务端不存储任何数据。
 
@@ -139,6 +143,7 @@ npm start                              # 先启动服务（读取 .env 里的模
 npm run eval                           # 每个用例跑 3 次
 npm run eval -- --runs 5 --only cache-strong,cache-verbose-empty
 npm run eval -- --save-baseline        # 确认结果没问题后，保存为新的基线
+npm run eval -- --pack java-backend-campus   # 带上题包的评分要点，检查它会不会把通用评分带偏
 ```
 
 脚本会报告每个用例是通过、不稳定（多次结果不一致）还是失败，检查好坏对比是否成立，并和 `evals/baseline.json` 对比，标出平均总分变化 ≥ 2 或某个维度变化 ≥ 1 的用例。有用例失败或对比不成立时退出码为 1，可以放进 CI。
@@ -153,7 +158,7 @@ npm run eval -- --save-baseline        # 确认结果没问题后，保存为新
 - [ ] 语音面试：流式 ASR + TTS
 - [ ] 视频面试：摄像头、录像回放、仪态建议（在浏览器本地分析）
 - [x] 面经上传：把真实面经整理成题目，确认后加入题库，出题时优先使用
-- [ ] Skill 题包：把“某类面试怎么面”写成可版本管理的题包，支持社区贡献
+- [x] Skill 题包：把“某类面试怎么面”写成可版本管理的题包，支持社区贡献
 - [x] 评分回归集：修改 Prompt 或更换模型前，先自动检查评分是否漂移
 - [x] 能力成长曲线
 - [x] 专项练习：针对弱项的知识点短练
@@ -165,7 +170,7 @@ npm run eval -- --save-baseline        # 确认结果没问题后，保存为新
 
 - **Prompt 改进**：附上改动前后的面试记录对比和 `npm run eval` 结果，说明好在哪里。
 - **评分用例**：在 `evals/judge-cases.json` 里补充容易评错的回答。
-- **新岗位方向**：补充对应岗位的出题倾向和评分要点。
+- **新岗位方向**：写一个 Skill 题包，补充对应岗位的出题指引、评分要点和精选题，见 [packs/README.md](packs/README.md)。
 - **Bug 修复**：请写明复现步骤，以及所用的模型和服务商。
 
 ## 说明
