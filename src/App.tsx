@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { createPlan, getConfig } from './api';
+import { createPlan, errorMessage, getConfig } from './api';
 import { BankPage } from './components/BankPage';
 import { Icon, LogoMark } from './components/Icon';
 import { InterviewPage } from './components/InterviewPage';
@@ -46,7 +46,12 @@ export default function App() {
   const startPractice: StartPractice = async ({ topic, role, level }) => {
     const base = lastConfig.current ?? { style: 'gentle' as const, resume: '', jd: '' };
     const config: InterviewConfig = { ...base, role, level, count: 3, focus: topic };
-    startInterview(config, await createPlan(config));
+    try {
+      startInterview(config, await createPlan(config));
+    } catch (e) {
+      // 生成大纲失败时要让用户知道，不能点了没反应
+      window.alert(`生成专项练习失败：${errorMessage(e)}`);
+    }
   };
 
   function onDone(record: InterviewRecord) {

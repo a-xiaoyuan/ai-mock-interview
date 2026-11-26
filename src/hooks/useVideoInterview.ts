@@ -67,10 +67,13 @@ function mirroredCapture(video: HTMLVideoElement | null): { stream: MediaStream 
   };
   draw();
   timer = window.setInterval(draw, 1000 / 15);
+  const stream = canvas.captureStream(15);
   return {
-    stream: canvas.captureStream(15),
+    stream,
     stop() {
       window.clearInterval(timer);
+      // 捕获流的轨道也要停，只清定时器的话每录一段就漏一份视频轨道
+      stream.getTracks().forEach((track) => track.stop());
     },
   };
 }
