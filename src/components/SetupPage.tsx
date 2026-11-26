@@ -3,8 +3,9 @@ import { createPlan, errorMessage, getPacks } from '../api';
 import { COUNTS, LEVELS, ROLES } from '../constants';
 import { loadBank } from '../lib/bank';
 import { loadHistory } from '../lib/history';
-import { ACCEPTED_RESUME_TYPES, ResumeFileError, readResumeFile } from '../lib/resumeFile';
+import { ACCEPTED_RESUME_TYPES, ResumeFileError, readResumeFile, type ResumeProgress } from '../lib/resumeFile';
 import type { InterviewConfig, InterviewRecord, PackSummary, Plan } from '../types';
+import { FileReadProgress, parsingLabel } from './FileReadProgress';
 import { GrowthPanel } from './GrowthPanel';
 import { Icon, type IconName } from './Icon';
 import type { StartPractice } from './PracticeButton';
@@ -79,6 +80,7 @@ export function SetupPage({ initial, onStart, onPractice, onChange, onOpenBank, 
       .catch(() => setPacks([])); // 拿不到题包列表不影响面试
   }, []);
   const [parsing, setParsing] = useState(false);
+  const [progress, setProgress] = useState<ResumeProgress | null>(null);
   const [fileStatus, setFileStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -102,15 +104,17 @@ export function SetupPage({ initial, onStart, onPractice, onChange, onOpenBank, 
     if (!file || parsing) return;
     if (config.resume.trim() && !confirm('用文件内容替换当前已填写的简历？')) return;
     setParsing(true);
+    setProgress({ ratio: null, message: '正在读取文件…' });
     setFileStatus(null);
     try {
-      const text = await readResumeFile(file);
+      const { text, note } = await readResumeFile(file, setProgress);
       set('resume', text);
-      setFileStatus({ ok: true, text: `已从 ${file.name} 提取 ${text.length} 字，请检查一下，可以直接修改。` });
+      setFileStatus({ ok: true, text: `已从 ${file.name} 提取 ${text.length} 字，请检查一下，可以直接修改。${note}` });
     } catch (e) {
       setFileStatus({ ok: false, text: e instanceof ResumeFileError ? e.message : `读取失败：${errorMessage(e)}` });
     } finally {
       setParsing(false);
+      setProgress(null);
       if (fileInput.current) fileInput.current.value = ''; // 允许重复选择同一个文件
     }
   }
@@ -222,11 +226,11 @@ export function SetupPage({ initial, onStart, onPractice, onChange, onOpenBank, 
           <div className="block">
             <div className="field-label">
               <label htmlFor="resume">
-                简历 <span className="hint">上传 PDF、Word 或粘贴文本，重点是项目经历</span>
+                简历 <span className="hint">上传 PDF、Word、图片或粘贴文本，重点是项目经历</span>
               </label>
               <button type="button" className="sm" onClick={() => fileInput.current?.click()} disabled={parsing}>
                 {parsing ? <span className="spinner" /> : <Icon name="upload" size={14} />}
-                {parsing ? '正在读取…' : '上传简历'}
+                {parsing ? parsingLabel(progress?.message ?? '') : '上传简历'}
               </button>
               <input ref={fileInput} type="file" accept={ACCEPTED_RESUME_TYPES} hidden onChange={(e) => loadFile(e.target.files?.[0])} />
             </div>
@@ -244,18 +248,20 @@ export function SetupPage({ initial, onStart, onPractice, onChange, onOpenBank, 
                 <div className="drop-hint">
                   <span>
                     <Icon name="upload" size={22} style={{ margin: '0 auto 6px' }} />
-                    松开即可导入 PDF / Word / TXT
+                    松开即可导入 PDF / Word / TXT / 图片
                   </span>
                 </div>
               )}
             </div>
-            {fileStatus ? (
+            {parsing && progress ? (
+              <FileReadProgress message={progress.message} ratio={progress.ratio} />
+            ) : fileStatus ? (
               <div className={`file-status ${fileStatus.ok ? 'ok' : 'err'}`}>
                 <Icon name={fileStatus.ok ? 'checkCircle' : 'alert'} size={14} />
                 {fileStatus.text}
               </div>
             ) : (
-              <div className="file-status">也可以把文件拖到上面的框里。文件只在你的浏览器里读取，不会上传。</div>
+              <div className="file-status">也可以把文件拖到上面的框里。文件只在你的浏览器里读取，不会上传。扫描件和图片会在本地识别，第一次要加载语言包。</div>
             )}
 
             <div className="field">
@@ -284,7 +290,7 @@ export function SetupPage({ initial, onStart, onPractice, onChange, onOpenBank, 
             </div>
             <div className="start-right">
               {loading && <PlanTimer />}
-              <button className="primary lg" onClick={start} disabled={loading}>
+              <button className="primary lg" onClick={start} disabled={loading || parsing}>
                 {loading ? <span className="spinner" /> : <Icon name="play" size={16} />}
                 开始面试
               </button>

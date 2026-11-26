@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { errorMessage, extractQuestions } from '../api';
 import { ROLES } from '../constants';
 import { addToBank, findDuplicate, loadBank, removeFromBank } from '../lib/bank';
-import { ResumeFileError, readResumeFile } from '../lib/resumeFile';
+import { ACCEPTED_RESUME_TYPES, ResumeFileError, readResumeFile, type ResumeProgress } from '../lib/resumeFile';
 import type { BankItem, Question } from '../types';
+import { FileReadProgress, parsingLabel } from './FileReadProgress';
 import { Icon } from './Icon';
 
 const PLACEHOLDER = `把面经原文贴进来，记得乱也没关系，例如：
@@ -34,6 +35,9 @@ export function BankPage() {
   const [drafts, setDrafts] = useState<Draft[] | null>(null);
   const [saved, setSaved] = useState('');
   const [query, setQuery] = useState('');
+  const [parsing, setParsing] = useState(false);
+  const [progress, setProgress] = useState<ResumeProgress | null>(null);
+  const [fileHint, setFileHint] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -44,13 +48,20 @@ export function BankPage() {
   }, [extracting]);
 
   async function loadFile(file: File | undefined) {
-    if (!file) return;
+    if (!file || parsing) return;
     setError('');
+    setFileHint('');
+    setParsing(true);
+    setProgress({ ratio: null, message: '正在读取文件…' });
     try {
-      setText(await readResumeFile(file));
+      const { text, note } = await readResumeFile(file, setProgress);
+      setText(text);
+      setFileHint(`已从 ${file.name} 提取 ${text.length} 字。${note}`.replaceAll('简历', '面经'));
     } catch (e) {
-      setError(e instanceof ResumeFileError ? e.message.replace('简历', '面经') : `读取失败：${errorMessage(e)}`);
+      setError(e instanceof ResumeFileError ? e.message.replaceAll('简历', '面经') : `读取失败：${errorMessage(e)}`);
     } finally {
+      setParsing(false);
+      setProgress(null);
       if (fileInput.current) fileInput.current.value = '';
     }
   }
@@ -153,13 +164,23 @@ export function BankPage() {
             <div className="field">
               <div className="field-label">
                 <label htmlFor="bank-text">面经原文</label>
-                <button type="button" className="sm" onClick={() => fileInput.current?.click()}>
-                  <Icon name="upload" size={14} />
-                  上传文件
+                <button type="button" className="sm" onClick={() => fileInput.current?.click()} disabled={parsing}>
+                  {parsing ? <span className="spinner" /> : <Icon name="upload" size={14} />}
+                  {parsing ? parsingLabel(progress?.message ?? '') : '上传文件'}
                 </button>
-                <input ref={fileInput} type="file" accept=".pdf,.docx,.txt,.md" hidden onChange={(e) => loadFile(e.target.files?.[0])} />
+                <input ref={fileInput} type="file" accept={ACCEPTED_RESUME_TYPES} hidden onChange={(e) => loadFile(e.target.files?.[0])} />
               </div>
               <textarea id="bank-text" rows={9} placeholder={PLACEHOLDER} value={text} onChange={(e) => setText(e.target.value)} />
+              {parsing && progress ? (
+                <FileReadProgress message={progress.message} ratio={progress.ratio} />
+              ) : fileHint ? (
+                <div className="file-status ok">
+                  <Icon name="checkCircle" size={14} />
+                  {fileHint}
+                </div>
+              ) : (
+                <div className="file-status">文件只在这个浏览器里读取，不会上传。扫描件和图片会在本地识别。</div>
+              )}
             </div>
 
             <div className="extract-bar">

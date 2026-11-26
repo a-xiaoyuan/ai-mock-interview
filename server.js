@@ -535,6 +535,9 @@ const MIME = {
   '.ico': 'image/x-icon',
   '.json': 'application/json; charset=utf-8',
   '.woff2': 'font/woff2',
+  '.wasm': 'application/wasm',
+  // 语言包是 gzip 压缩后的原始字节，由浏览器里的识别引擎自己解压，不要加 Content-Encoding
+  '.gz': 'application/octet-stream',
 };
 
 function serveStatic(url, res) {
