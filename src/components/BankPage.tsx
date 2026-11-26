@@ -33,6 +33,8 @@ export function BankPage() {
   const [sec, setSec] = useState(0);
   const [error, setError] = useState('');
   const [drafts, setDrafts] = useState<Draft[] | null>(null);
+  /** 提取草稿时的来源/岗位快照：保存时用它，不用点击保存瞬间的输入框值 */
+  const [draftMeta, setDraftMeta] = useState<{ source: string; role: string } | null>(null);
   const [saved, setSaved] = useState('');
   const [query, setQuery] = useState('');
   const [parsing, setParsing] = useState(false);
@@ -46,6 +48,12 @@ export function BankPage() {
     const t = setInterval(() => setSec((n) => n + 1), 1000);
     return () => clearInterval(t);
   }, [extracting]);
+
+  // 原文、来源或岗位变了，之前整理出的草稿就作废，避免按错来源/岗位入库
+  useEffect(() => {
+    setDrafts(null);
+    setDraftMeta(null);
+  }, [text, source, role]);
 
   async function loadFile(file: File | undefined) {
     if (!file || parsing) return;
@@ -77,7 +85,9 @@ export function BankPage() {
       if (!questions.length) {
         setError('没有从这段文字里找到技术问题。');
         setDrafts(null);
+        setDraftMeta(null);
       } else {
+        setDraftMeta({ source: source.trim(), role });
         setDrafts(
           questions.map(({ duplicateOf, ...q }) => {
             const same = bank.find((it) => it.id === duplicateOf) ?? findDuplicate(q.question, bank);
@@ -95,12 +105,13 @@ export function BankPage() {
   function save() {
     if (!drafts) return;
     const picked = drafts.filter((d) => d.checked);
-    const n = addToBank(picked, { source: source.trim(), role });
+    const { added: n, dropped } = addToBank(picked, draftMeta ?? { source: source.trim(), role });
     const skipped = picked.length - n;
     setItems(loadBank());
     setDrafts(null);
+    setDraftMeta(null);
     setText('');
-    setSaved(`已加入 ${n} 道题${skipped ? `，${skipped} 道与题库里的题重复，已跳过` : ''}。`);
+    setSaved(`已加入 ${n} 道题${skipped ? `，${skipped} 道与题库里的题重复，已跳过` : ''}${dropped ? `；题库已满，已移除最旧的 ${dropped} 道` : ''}。`);
   }
 
   function remove(id: string) {
@@ -238,7 +249,13 @@ export function BankPage() {
                 ))}
               </ul>
               <div className="card-foot" style={{ justifyContent: 'flex-end' }}>
-                <button className="ghost" onClick={() => setDrafts(null)}>
+                <button
+                  className="ghost"
+                  onClick={() => {
+                    setDrafts(null);
+                    setDraftMeta(null);
+                  }}
+                >
                   放弃
                 </button>
                 <button className="primary" onClick={save} disabled={!checkedCount}>

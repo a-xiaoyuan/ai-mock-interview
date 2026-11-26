@@ -102,7 +102,13 @@ export function SetupPage({ initial, onStart, onPractice, onChange, onOpenBank, 
 
   async function loadFile(file: File | undefined) {
     if (!file || parsing) return;
-    if (config.resume.trim() && !confirm('用文件内容替换当前已填写的简历？')) return;
+    const clearInput = () => {
+      if (fileInput.current) fileInput.current.value = ''; // 允许重复选择同一个文件
+    };
+    if (config.resume.trim() && !confirm('用文件内容替换当前已填写的简历？')) {
+      clearInput();
+      return;
+    }
     setParsing(true);
     setProgress({ ratio: null, message: '正在读取文件…' });
     setFileStatus(null);
@@ -115,7 +121,7 @@ export function SetupPage({ initial, onStart, onPractice, onChange, onOpenBank, 
     } finally {
       setParsing(false);
       setProgress(null);
-      if (fileInput.current) fileInput.current.value = ''; // 允许重复选择同一个文件
+      clearInput();
     }
   }
 
