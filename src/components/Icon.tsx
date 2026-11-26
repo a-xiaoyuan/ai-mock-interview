@@ -118,6 +118,20 @@ const PATHS = {
       <path d="m16 9 5 6M21 9l-5 6" />
     </>
   ),
+  video: (
+    <>
+      <rect x="3" y="6" width="12" height="12" rx="2" />
+      <path d="m15 10 6-3v10l-6-3" />
+    </>
+  ),
+  videoOff: (
+    <>
+      <path d="M3 6.5A2 2 0 0 1 5 5h6" />
+      <path d="M15 10.5 21 7v10l-4.2-2.1" />
+      <path d="M3 8v8a2 2 0 0 0 2 2h7" />
+      <path d="m2 2 20 20" />
+    </>
+  ),
   refresh: (
     <>
       <path d="M20 11a8 8 0 0 0-14.9-3.5M4 4v4h4" />

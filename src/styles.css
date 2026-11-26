@@ -284,7 +284,7 @@ button.danger:hover:not(:disabled) { color: var(--bad); background: var(--bad-so
 .practice-error { font-size: 12px; color: var(--bad); max-width: 220px; text-align: right; }
 
 /* ========== 面试页 ========== */
-.interview { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; height: calc(100vh - var(--topbar-h) - 56px); min-height: 520px; }
+.interview { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; height: calc(100vh - var(--topbar-h) - 56px); min-height: 520px; }
 .chat { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .chat-head { display: flex; align-items: center; gap: 10px; padding: 12px 20px; border-bottom: 1px solid var(--line); min-height: 52px; }
 .chat-head b { font-weight: 600; }
@@ -489,7 +489,20 @@ label.field-label, span.field-label { display: block; }
 .mono { font-family: ui-monospace, 'Cascadia Code', 'JetBrains Mono', Consolas, 'Courier New', monospace; }
 main:has(.interview.coding) { max-width: 1480px; }
 .interview.coding { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); }
-.interview.coding .side { display: none; }
+.interview.coding .side {
+  display: flex;
+  position: absolute;
+  z-index: 6;
+  top: 12px;
+  left: 12px;
+  width: 260px;
+  max-height: calc(100% - 24px);
+  overflow: auto;
+  pointer-events: none;
+  background: transparent;
+}
+.interview.coding .side > :not(.camera-card) { display: none; }
+.interview.coding .camera-card { pointer-events: auto; box-shadow: var(--shadow-float); }
 .code-panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .code-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
 .code-head select { width: auto; height: 30px; font-size: 13px; }
@@ -540,3 +553,31 @@ main:has(.interview.coding) { max-width: 1480px; }
 }
 .code-block code { font: inherit; }
 .mono, .code-block { font-variant-ligatures: none; font-feature-settings: 'calt' 0, 'liga' 0; }
+
+/* ========== 视频面试 ========== */
+.camera-body { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px 14px; }
+.camera-note { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--muted); }
+.camera-note .spinner { display: inline-block; vertical-align: -2px; margin-right: 6px; }
+.camera-note.warn-text { color: var(--bad); }
+.camera-fallback { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.camera-stage { position: relative; aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden; background: #0e1014; }
+.camera-stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #0e1014; }
+.camera-stage video.mirrored { transform: scaleX(-1); }
+.camera-stage video.is-hidden { opacity: 0; pointer-events: none; }
+.cam-badge { position: absolute; left: 8px; top: 8px; z-index: 1; display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 999px; background: color-mix(in srgb, #0e1014 72%, transparent); color: #fff; font-size: 12px; font-variant-numeric: tabular-nums; }
+.cam-badge.quiet { color: #e9ebef; }
+.camera-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.camera-actions .cam-stop { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--line-2)); }
+.camera-cues { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.camera-cues li { font-size: 12.5px; line-height: 1.5; padding: 7px 8px; border-radius: 8px; background: var(--fill); color: var(--ink-2); }
+.camera-cues li.warn { background: var(--warn-soft); color: var(--ink); }
+.camera-cues li.good { background: var(--good-soft); color: var(--ink); }
+.clip-summary { padding: 8px 10px; border-radius: 8px; background: var(--fill); }
+.clip-summary .label { margin-bottom: 4px; }
+.clip-summary p { margin: 0 0 4px; font-size: 12.5px; line-height: 1.5; color: var(--ink-2); }
+.clip-summary p:last-child { margin-bottom: 0; }
+.clip-summary.warn { background: var(--warn-soft); }
+.clip-summary.good { background: var(--good-soft); }
+@media (max-width: 640px) {
+  .camera-actions .sm { flex: 1 1 auto; }
+}

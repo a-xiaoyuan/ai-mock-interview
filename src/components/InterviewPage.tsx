@@ -3,7 +3,9 @@ import { MAX_DEPTH } from '../constants';
 import { useInterview } from '../hooks/useInterview';
 import { useDictation, useSpeaker } from '../hooks/useSpeech';
 import { defaultLanguage, formatSubmission } from '../lib/code';
+import { canSendAnswer } from '../../lib/video-session.mjs';
 import type { InterviewConfig, InterviewRecord, JudgeResult, LanguageId, Plan, RunnerLanguage, RunResult } from '../types';
+import { CameraPanel } from './CameraPanel';
 import { CodePanel, newCodeState, type CodeState } from './CodePanel';
 import { Icon } from './Icon';
 import { RichText } from './RichText';
@@ -228,7 +230,7 @@ export function InterviewPage({ config, plan, onDone, runners = [] }: Props) {
               >
                 <Icon name={dict.listening ? 'stop' : 'mic'} size={16} />
               </button>
-              <button className="primary icon-btn" onClick={send} disabled={iv.busy || !draft.trim()} aria-label="发送" title="发送">
+              <button className="primary icon-btn" onClick={send} disabled={!canSendAnswer({ busy: iv.busy, text: draft })} aria-label="发送" title="发送">
                 <Icon name="send" size={17} />
               </button>
             </div>
@@ -264,6 +266,7 @@ export function InterviewPage({ config, plan, onDone, runners = [] }: Props) {
       )}
 
       <aside className="side">
+        <CameraPanel />
         <div className="card">
           <div className="card-head">
             <h2>进度</h2>

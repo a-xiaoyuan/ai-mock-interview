@@ -536,6 +536,7 @@ const MIME = {
   '.json': 'application/json; charset=utf-8',
   '.woff2': 'font/woff2',
   '.wasm': 'application/wasm',
+  '.task': 'application/octet-stream',
   // 语言包是 gzip 压缩后的原始字节，由浏览器里的识别引擎自己解压，不要加 Content-Encoding
   '.gz': 'application/octet-stream',
 };
@@ -552,10 +553,14 @@ function serveStatic(url, res) {
   if (!file.startsWith(DIST + path.sep)) file = index; // 防止路径穿越
   if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = index; // 前端路由回退
   const hashed = file.startsWith(path.join(DIST, 'assets') + path.sep);
-  res.writeHead(200, {
+  const posture = file.startsWith(path.join(DIST, 'posture') + path.sep);
+  const headers = {
     'Content-Type': MIME[path.extname(file)] || 'application/octet-stream',
-    'Cache-Control': hashed ? 'public, max-age=31536000, immutable' : 'no-cache',
-  });
+    'Cache-Control': hashed ? 'public, max-age=31536000, immutable' : posture ? 'public, max-age=86400' : 'no-cache',
+  };
+  // 姿态模型的脚本以 crossorigin=anonymous 加载，需要这个响应头。这里只提供静态模型，不接收画面。
+  if (posture) headers['Access-Control-Allow-Origin'] = '*';
+  res.writeHead(200, headers);
   fs.createReadStream(file).pipe(res);
 }
 
