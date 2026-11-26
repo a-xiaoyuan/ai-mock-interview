@@ -20,12 +20,16 @@ export const currentCode = (s: CodeState) => s.codes[s.language] ?? TEMPLATES[s.
 
 interface Props {
   question: Question;
+  /** 本题在整场面试中的序号；提交时原样带回，面试页据此判断判题期间有没有切题 */
+  questionIndex: number;
   state: CodeState;
   onChange: (update: CodeUpdate) => void;
   runners: RunnerLanguage[];
   /** 面试官正在说话或评分时不能提交 */
   busy: boolean;
   onSubmit: (extra: {
+    /** 提交时所属题目的序号 */
+    qi: number;
     code: string;
     language: LanguageId;
     run?: { stdin: string; result: RunResult };
@@ -40,7 +44,7 @@ type CodeUpdate = CodeState | ((prev: CodeState) => CodeState);
 const INDENT = '    ';
 
 /** 算法题的代码面板：题目、编辑器、自定义输入和运行结果 */
-export function CodePanel({ question, state, onChange, runners, busy, onSubmit }: Props) {
+export function CodePanel({ question, questionIndex, state, onChange, runners, busy, onSubmit }: Props) {
   const [running, setRunning] = useState(false);
   const [judging, setJudging] = useState(false);
   const [error, setError] = useState<{ scope: 'run' | 'judge'; text: string } | null>(null);
@@ -114,7 +118,7 @@ export function CodePanel({ question, state, onChange, runners, busy, onSubmit }
       judgeResult = out.result;
       judgeError = out.error || '';
     }
-    onSubmit({ code, language, run, judge: judgeResult, judgeError, skippedCases: cases.length > 0 && !runner });
+    onSubmit({ qi: questionIndex, code, language, run, judge: judgeResult, judgeError, skippedCases: cases.length > 0 && !runner });
   }
 
   const status = last && runStatus(last.result);

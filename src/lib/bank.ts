@@ -8,17 +8,36 @@ const PLAN_POOL = 30;
 /** 两道题的字符二元组重合度超过这个值，就当作同一道题 */
 const SIMILAR = 0.75;
 
+/** 逐条校验存量条目的形状：坏元素直接丢弃，避免搜索、出题时解引用崩溃 */
+function isBankItem(data: unknown): data is BankItem {
+  if (!data || typeof data !== 'object') return false;
+  const it = data as BankItem;
+  if ([it.id, it.stage, it.topic, it.question, it.source, it.role].some((v) => typeof v !== 'string')) return false;
+  if (!Array.isArray(it.points) || it.points.some((p) => typeof p !== 'string')) return false;
+  return typeof it.addedAt === 'number' && typeof it.used === 'number';
+}
+
 export function loadBank(): BankItem[] {
   try {
     const data = JSON.parse(localStorage.getItem(KEY) || '[]');
-    return Array.isArray(data) ? data : [];
+    return Array.isArray(data) ? data.filter(isBankItem) : [];
   } catch {
     return [];
   }
 }
 
 function saveBank(items: BankItem[]) {
-  localStorage.setItem(KEY, JSON.stringify(items.slice(0, LIMIT)));
+  const list = items.slice(0, LIMIT);
+  try {
+    localStorage.setItem(KEY, JSON.stringify(list));
+  } catch {
+    // 配额满了：丢掉最旧的 1/4 再试一次，再失败就放弃这次保存
+    try {
+      localStorage.setItem(KEY, JSON.stringify(list.slice(0, list.length - Math.ceil(list.length / 4))));
+    } catch {
+      /* 保存失败不抛错，避免中断调用方 */
+    }
+  }
 }
 
 const normalize = (s: string) => s.toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
@@ -44,8 +63,8 @@ export function findDuplicate(question: string, items: BankItem[]): BankItem | u
   return items.find((it) => similarity(q, bigrams(it.question)) >= SIMILAR);
 }
 
-/** 加入题库（新的在前），跳过与已有题目重复的；返回实际加入的数量 */
-export function addToBank(questions: Question[], meta: { source: string; role: string }): number {
+/** 加入题库（新的在前），跳过与已有题目重复的；返回实际加入数和被上限挤掉的旧题数 */
+export function addToBank(questions: Question[], meta: { source: string; role: string }): { added: number; dropped: number } {
   const items = loadBank();
   const added: BankItem[] = [];
   for (const q of questions) {
@@ -62,8 +81,10 @@ export function addToBank(questions: Question[], meta: { source: string; role: s
       used: 0,
     });
   }
-  saveBank([...added, ...items]);
-  return added.length;
+  const merged = [...added, ...items];
+  const dropped = Math.max(0, merged.length - LIMIT);
+  saveBank(merged);
+  return { added: added.length, dropped };
 }
 
 export function removeFromBank(ids: string[]) {

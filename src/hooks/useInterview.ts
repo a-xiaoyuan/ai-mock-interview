@@ -1,5 +1,6 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { createReview, errorMessage, judgeAnswer, streamAsk } from '../api';
+import { MAX_DEPTH } from '../constants';
 import { knownWeaknessTopics } from '../lib/history';
 import { totalScore } from '../lib/score';
 import type { AskMode, InterviewConfig, InterviewRecord, Judgement, Plan, QuestionResult, ReportItem, Turn } from '../types';
@@ -52,8 +53,10 @@ export function useInterview(config: InterviewConfig, plan: Plan, onDone: (recor
         { mode, direction, q, chain: s.chains[s.qi], style: config.style, role: config.role, isLast: s.qi === total - 1 },
         setStreaming,
       );
+      if (!alive.current) return;
       s.chains[s.qi].push({ role: 'interviewer', text });
     } catch (e) {
+      if (!alive.current) return;
       notice(`面试官出错了：${errorMessage(e)}`);
     }
     setStreaming(null);
@@ -95,6 +98,8 @@ export function useInterview(config: InterviewConfig, plan: Plan, onDone: (recor
   async function answer(text: string): Promise<boolean> {
     if (s.busy || s.finished || s.qi >= total) return false;
     const chain = s.chains[s.qi];
+    // 当前题还没有面试官的提问（例如开场提问失败）时不作答，避免对着空气回答还被送去评分
+    if (!chain.some((t) => t.role === 'interviewer')) return false;
     chain.push({ role: 'candidate', text });
     setStreaming(''); // 评分期间先显示“正在思考”，随后由追问/下一题的流式输出接上
     setBusy(true);
@@ -108,15 +113,18 @@ export function useInterview(config: InterviewConfig, plan: Plan, onDone: (recor
       setBusy(false);
       return false;
     }
+    if (!alive.current) return false;
     s.results[s.qi] = judgement;
     s.last = { idx: s.qi, judgement };
-    if (judgement.verdict === 'follow_up') {
+    // 追问层数客户端也设硬上限：Judge 一直返回 follow_up 时不能无限追问同一题
+    if (judgement.verdict === 'follow_up' && s.depth < MAX_DEPTH) {
       s.depth++;
       rerender();
       await ask('follow', judgement.direction);
     } else {
       await nextQuestion();
     }
+    if (!alive.current) return true;
     if (!s.finished) setBusy(false);
     return true;
   }

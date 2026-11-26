@@ -350,7 +350,7 @@ console.log(a);
 });
 
 test('有 C++ 时，编译失败只报一次，不逐例运行', async (t) => {
-  if (!detectLanguages().some((l) => l.id === 'cpp')) {
+  if (!(await detectLanguages()).some((l) => l.id === 'cpp')) {
     t.skip('本机没有 C++ 编译器');
     return;
   }

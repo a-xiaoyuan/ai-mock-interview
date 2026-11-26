@@ -74,6 +74,8 @@ async function judge(q, chain, depth) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  // 换模型/改 Prompt 后最常见的漂移就是返回缺 scores；在这里拦下，让这次运行走失败分支，而不是汇总时崩溃
+  if (!data.scores || !DIMS.every(([k]) => Number.isFinite(data.scores[k]))) throw new Error('Judge 返回缺少 scores 或维度非法');
   return data;
 }
 
