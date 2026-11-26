@@ -32,7 +32,11 @@ function loadPdfjs() {
       const [pdfjs, worker] = await Promise.all([import('pdfjs-dist'), import('pdfjs-dist/build/pdf.worker.min.mjs?url')]);
       pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
       return pdfjs;
-    })();
+    })().catch((e: unknown) => {
+      // 加载失败不缓存这个 rejected Promise，否则本次会话内所有 PDF 都读不了
+      pdfjsPromise = null;
+      throw e;
+    });
   }
   return pdfjsPromise;
 }
@@ -112,8 +116,11 @@ async function renderPdfPage(session: unknown, pageIndex: number) {
   if (!ctx) throw new ResumeFileError('浏览器无法创建画布，没法识别这一页。');
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  await page.render({ canvas, viewport }).promise;
-  page.cleanup();
+  try {
+    await page.render({ canvas, viewport }).promise;
+  } finally {
+    page.cleanup();
+  }
   return canvas;
 }
 
