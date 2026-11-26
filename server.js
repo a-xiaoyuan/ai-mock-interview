@@ -15,6 +15,7 @@ const { applyPreset, withMockAlgo } = require('./lib/preset');
 // ---------- 配置 ----------
 loadEnv(path.join(__dirname, '.env'));
 const CFG = {
+  host: process.env.HOST || '127.0.0.1', // 默认只绑回环地址，局域网访问需显式设 HOST=0.0.0.0
   port: Number(process.env.PORT || 3000),
   baseUrl: (process.env.LLM_BASE_URL || 'https://api.deepseek.com/v1').replace(/\/+$/, ''),
   apiKey: process.env.LLM_API_KEY || '',
@@ -217,8 +218,13 @@ async function chat(messages, { model = CFG.model, json = false, stream = false,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${CFG.apiKey}` },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(120000), // 上游挂起时不要无限期等下去
   });
-  if (!res.ok) throw new Error(`LLM ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) {
+    // 上游错误原文只记服务端日志，不回给前端（可能含服务商内部信息）
+    console.error(`LLM ${res.status}:`, (await res.text()).slice(0, 300));
+    throw new Error(`LLM ${res.status}`);
+  }
   if (stream) return res;
   const data = await res.json();
   return data.choices?.[0]?.message?.content || '';
@@ -245,13 +251,21 @@ async function pipeStream(upstream, res) {
   const reader = upstream.body.getReader();
   const dec = new TextDecoder();
   let buf = '';
+  let closed = false;
+  // 客户端断开就取消上游流，别再为已关闭的连接继续读、继续计费
+  res.on('close', () => {
+    if (closed) return;
+    closed = true;
+    reader.cancel().catch(() => {});
+  });
   for (;;) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done || closed) break;
     buf += dec.decode(value, { stream: true });
     const lines = buf.split('\n');
     buf = lines.pop();
     for (const line of lines) {
+      if (closed) break;
       const t = line.trim();
       if (!t.startsWith('data:')) continue;
       const payload = t.slice(5).trim();
@@ -262,7 +276,7 @@ async function pipeStream(upstream, res) {
       } catch {}
     }
   }
-  res.end();
+  if (!closed) res.end();
 }
 
 // ---------- 校验与归一化 ----------
@@ -419,7 +433,7 @@ const routes = {
   'GET /api/config': async (_b, _res, req) => ({
     mock: MOCK,
     model: MOCK ? 'mock' : CFG.model,
-    runner: runnerAllowed(req) ? runner.detectLanguages().map(({ id, name, version }) => ({ id, name, version })) : [],
+    runner: runnerAllowed(req) ? (await runner.detectLanguages()).map(({ id, name, version }) => ({ id, name, version })) : [],
   }),
 
   'POST /api/run': async (b, _res, req) => {
@@ -484,13 +498,18 @@ const routes = {
   },
 
   'POST /api/judge': async (b) => {
+    if (!b.q || typeof b.q !== 'object') throw new Error('题目缺失');
     const depth = Number(b.depth) || 0;
-    const args = { q: b.q, chain: b.chain || [], depth, pack: getPack(String(b.pack || '')) };
+    // 归一化题目与问答链，畸形入参不要一路抛到提示词里变 500
+    const q = { ...b.q, points: Array.isArray(b.q.points) ? b.q.points.map(String) : [] };
+    const chain = (Array.isArray(b.chain) ? b.chain : []).filter((t) => t && typeof t === 'object').map((t) => ({ ...t, text: String(t.text ?? '') }));
+    const args = { q, chain, depth, pack: getPack(String(b.pack || '')) };
     const raw = MOCK ? mock.judge(args) : await chatJSON(PROMPTS.judge(args), { model: CFG.model, temperature: 0 });
     return normJudge(raw, depth);
   },
 
   'POST /api/ask': async (b, res) => {
+    if (!b.q || typeof b.q.question !== 'string') throw new Error('题目缺失');
     const args = { style: b.style, role: b.role, mode: b.mode, q: b.q, chain: b.chain || [], direction: b.direction || '', isLast: !!b.isLast };
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache' });
     if (MOCK) return streamText(res, mock.interviewer(args));
@@ -541,7 +560,7 @@ const MIME = {
   '.gz': 'application/octet-stream',
 };
 
-function serveStatic(url, res) {
+function serveStatic(url, res, isHead = false) {
   const index = path.join(DIST, 'index.html');
   if (!fs.existsSync(index)) {
     res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -561,28 +580,40 @@ function serveStatic(url, res) {
   // 姿态模型的脚本以 crossorigin=anonymous 加载，需要这个响应头。这里只提供静态模型，不接收画面。
   if (posture) headers['Access-Control-Allow-Origin'] = '*';
   res.writeHead(200, headers);
-  fs.createReadStream(file).pipe(res);
+  if (isHead) return res.end(); // HEAD 只回响应头，不回文件体
+  const stream = fs.createReadStream(file);
+  // 文件在检查后被删/不可读时不要让未处理的 error 打挂进程
+  stream.on('error', (err) => {
+    console.error('[static]', err.message);
+    if (res.headersSent) res.destroy();
+    else { res.writeHead(500); res.end(); }
+  });
+  stream.pipe(res);
 }
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
+    // 慢速请求不要长期占着连接：读请求体最多给 30 秒
+    const timer = setTimeout(() => { reject(new Error('请求超时')); req.destroy(); }, 30000);
     req.on('data', (c) => {
       size += c.length;
-      if (size > 1e6) { reject(new Error('请求体过大')); req.destroy(); }
+      if (size > 1e6) { clearTimeout(timer); reject(new Error('请求体过大')); req.destroy(); }
       else chunks.push(c);
     });
     req.on('end', () => {
+      clearTimeout(timer);
       try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); }
       catch { reject(new Error('JSON 格式错误')); }
     });
+    req.on('error', () => clearTimeout(timer));
   });
 }
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
-  if ((req.method === 'GET' || req.method === 'HEAD') && !url.pathname.startsWith('/api/')) return serveStatic(url, res);
+  if ((req.method === 'GET' || req.method === 'HEAD') && !url.pathname.startsWith('/api/')) return serveStatic(url, res, req.method === 'HEAD');
   const handler = routes[`${req.method} ${url.pathname}`];
   if (!handler) { res.writeHead(404); return res.end('Not found'); }
   try {
@@ -601,12 +632,13 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(CFG.port, () => {
+server.listen(CFG.port, CFG.host, () => {
   console.log(`AI 模拟面试服务已启动：http://localhost:${CFG.port}`);
   if (!fs.existsSync(path.join(DIST, 'index.html'))) console.log('（dist/ 不存在：开发请访问 Vite 的 http://localhost:5173，或先 npm run build）');
   console.log(MOCK ? '当前为 mock 模式（未配置 LLM_API_KEY）' : `模型：${CFG.model} @ ${CFG.baseUrl}`);
   if (CFG.codeRunner !== 'off') {
-    const langs = runner.detectLanguages().map((l) => l.name);
-    console.log(`算法题可运行的语言：${langs.join('、') || '无'}${CFG.codeRunner === 'local' ? '（只对本机开放）' : ''}`);
+    runner.detectLanguages().then((langs) => {
+      console.log(`算法题可运行的语言：${langs.map((l) => l.name).join('、') || '无'}${CFG.codeRunner === 'local' ? '（只对本机开放）' : ''}`);
+    }).catch(() => {});
   }
 });
