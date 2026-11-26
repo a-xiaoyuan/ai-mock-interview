@@ -1,4 +1,4 @@
-import type { LanguageId, RunResult } from '../types';
+import type { CaseStatus, JudgeResult, LanguageId, RunResult } from '../types';
 
 export const LANGUAGES: { id: LanguageId; name: string; fence: string }[] = [
   { id: 'java', name: 'Java', fence: 'java' },
@@ -90,6 +90,15 @@ export const saveLanguage = (id: LanguageId) => localStorage.setItem(LANG_KEY, i
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}\n…（共 ${s.length} 字，已截断）` : s);
 
+export const CASE_STATUS_TEXT: Record<CaseStatus, string> = {
+  passed: '通过',
+  wrong_answer: '答案错误',
+  runtime_error: '运行错误',
+  timeout: '超时',
+  truncated: '输出超限',
+  compile_error: '编译失败',
+};
+
 /** 运行结果的一句话状态 */
 export function runStatus(r: RunResult): { ok: boolean; text: string } {
   if (r.stage === 'compile') return { ok: false, text: r.timedOut ? '编译超时' : '编译失败' };
@@ -99,18 +108,30 @@ export function runStatus(r: RunResult): { ok: boolean; text: string } {
   return { ok: true, text: '运行成功' };
 }
 
-/** 提交给面试官的文字：说明 + 代码 + 最近一次运行（代码没改过才附上） */
-export function formatSubmission(opts: { note: string; language: LanguageId; code: string; run?: { stdin: string; result: RunResult } }) {
+/** 提交给面试官的文字：说明 + 代码 + 判题结果 + 最近一次自定义运行（代码没改过才附上） */
+export function formatSubmission(opts: {
+  note: string;
+  language: LanguageId;
+  code: string;
+  run?: { stdin: string; result: RunResult };
+  judge?: JudgeResult;
+  judgeError?: string;
+  /** 题目有预置用例，但这门语言在本机跑不了 */
+  skippedCases?: boolean;
+}) {
   const lang = LANGUAGES.find((l) => l.id === opts.language)!;
   const parts = [];
   if (opts.note.trim()) parts.push(opts.note.trim());
   parts.push(`我的代码（${lang.name}）：\n\`\`\`${lang.fence}\n${opts.code.trimEnd()}\n\`\`\``);
+  if (opts.judge?.summary) parts.push(opts.judge.summary);
+  else if (opts.judgeError) parts.push(`判题没有完成：${opts.judgeError}`);
+  else if (opts.skippedCases) parts.push('这道题有预置测试用例，但当前语言在本机不能运行，没有自动判题。');
   if (opts.run) {
     const { stdin, result } = opts.run;
     const st = runStatus(result);
     const out = result.stage === 'compile' ? result.stderr : result.stdout + (result.stderr ? `\n[stderr]\n${result.stderr}` : '');
     parts.push(
-      `运行结果：${st.text}，耗时 ${result.timeMs} ms\n输入：\n\`\`\`\n${clip(stdin.trimEnd(), 400) || '（空）'}\n\`\`\`\n输出：\n\`\`\`\n${clip(out.trimEnd(), 800) || '（无输出）'}\n\`\`\``,
+      `自定义输入的运行结果：${st.text}，耗时 ${result.timeMs} ms\n输入：\n\`\`\`\n${clip(stdin.trimEnd(), 400) || '（空）'}\n\`\`\`\n输出：\n\`\`\`\n${clip(out.trimEnd(), 800) || '（无输出）'}\n\`\`\``,
     );
   }
   return parts.join('\n\n');

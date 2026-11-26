@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "start": "node server.js",
     "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.js",
     "eval": "node scripts/eval-judge.mjs",
     "check-packs": "node scripts/check-packs.cjs"
   },

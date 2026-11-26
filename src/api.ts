@@ -1,5 +1,5 @@
 import { bankPoolFor } from './lib/bank';
-import type { AskMode, InterviewConfig, LanguageId, PackSummary, InterviewStyle, Judgement, Plan, Question, ReportItem, Review, RunResult, ServerConfig, Turn } from './types';
+import type { AskMode, InterviewConfig, JudgeResult, LanguageId, PackSummary, InterviewStyle, Judgement, Plan, Question, ReportItem, Review, RunResult, ServerConfig, TestCase, Turn } from './types';
 
 async function request<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
@@ -35,6 +35,9 @@ export const extractQuestions = (body: { text: string; role: string; existing: {
 
 /** 在本机运行算法题代码 */
 export const runCode = (body: { language: LanguageId; code: string; stdin: string }) => request<RunResult>('/api/run', body);
+
+/** 用题目上的预置用例判题。和 runCode 同一套运行器，不是容器沙箱 */
+export const judgeCode = (body: { language: LanguageId; code: string; cases: TestCase[] }) => request<JudgeResult>('/api/judge-code', body);
 
 export const getPacks = () => request<PackSummary[]>('/api/packs');
 

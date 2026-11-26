@@ -18,6 +18,14 @@ export interface InterviewConfig {
   pack?: string;
 }
 
+/** 算法题的预置测试用例：标准输入和期望的标准输出 */
+export interface TestCase {
+  /** 展示名，可空 */
+  name?: string;
+  input: string;
+  output: string;
+}
+
 export interface Question {
   stage: string;
   topic: string;
@@ -27,6 +35,8 @@ export interface Question {
   from?: string;
   /** 选自题包时为题包 id */
   pack?: string;
+  /** 有则提交代码时自动判题 */
+  cases?: TestCase[];
 }
 
 /** 面经题库里的一道题 */
@@ -135,4 +145,27 @@ export interface RunResult {
   timeMs: number;
   timedOut: boolean;
   truncated: boolean;
+}
+
+export type CaseStatus = 'passed' | 'wrong_answer' | 'runtime_error' | 'timeout' | 'truncated' | 'compile_error';
+
+export interface CaseResult {
+  name: string;
+  status: CaseStatus;
+  passed: boolean;
+  timeMs: number;
+  stdout: string;
+  stderr: string;
+  input: string;
+  expected: string;
+}
+
+/** /api/judge-code 的返回。summary 是给面试官看的文字摘要 */
+export interface JudgeResult {
+  passed: number;
+  total: number;
+  /** 编译阶段就失败了，用例没有真正运行 */
+  compileError: boolean;
+  cases: CaseResult[];
+  summary: string;
 }
