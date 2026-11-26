@@ -121,11 +121,25 @@ export interface PackSummary {
 
 export type AskMode = 'open' | 'follow' | 'next';
 
+export interface SandboxStatus {
+  mode: 'auto' | 'on' | 'off';
+  /** 这次实际在容器里跑 */
+  active: boolean;
+  runtime: string | null;
+  image: string | null;
+  /** 没使用容器时的原因；容器启用时为 null */
+  fallback: 'no-runtime' | 'no-image' | 'probe-failed' | 'disabled' | null;
+  /** 要求沙箱但没就绪时的说明；能跑时为 null */
+  error: string | null;
+}
+
 export interface ServerConfig {
   mock: boolean;
   model: string;
-  /** 本机可以运行代码的语言；为空表示不能运行（服务端关闭了，或不是本机访问） */
+  /** 当前可以运行代码的语言；为空表示不能运行（关闭了、不是本机访问，或要求沙箱但沙箱没就绪） */
   runner?: RunnerLanguage[];
+  /** 运行接口不可用时为 null */
+  sandbox?: SandboxStatus | null;
 }
 
 export type LanguageId = 'javascript' | 'python' | 'java' | 'cpp' | 'go';

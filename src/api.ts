@@ -33,10 +33,10 @@ export function createPlan(config: InterviewConfig) {
 export const extractQuestions = (body: { text: string; role: string; existing: { id: string; question: string; topic: string }[] }) =>
   request<{ questions: (Question & { duplicateOf?: string })[] }>('/api/extract', body);
 
-/** 在本机运行算法题代码 */
+/** 运行算法题代码。服务端可能在容器沙箱里跑，也可能回退到本机进程，见 CODE_SANDBOX */
 export const runCode = (body: { language: LanguageId; code: string; stdin: string }) => request<RunResult>('/api/run', body);
 
-/** 用题目上的预置用例判题。和 runCode 同一套运行器，不是容器沙箱 */
+/** 用题目上的预置用例判题。和 runCode 同一套运行器 */
 export const judgeCode = (body: { language: LanguageId; code: string; cases: TestCase[] }) => request<JudgeResult>('/api/judge-code', body);
 
 export const getPacks = () => request<PackSummary[]>('/api/packs');

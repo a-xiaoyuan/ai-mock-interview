@@ -95,7 +95,16 @@ export default function App() {
           />
         )}
         {view.name === 'bank' && <BankPage />}
-        {view.name === 'interview' && <InterviewPage key={view.key} config={view.config} plan={view.plan} onDone={onDone} runners={server?.runner ?? []} />}
+        {view.name === 'interview' && (
+          <InterviewPage
+            key={view.key}
+            config={view.config}
+            plan={view.plan}
+            onDone={onDone}
+            runners={server?.runner ?? []}
+            runnerNote={server?.sandbox?.error || undefined}
+          />
+        )}
         {view.name === 'report' && <ReportPage record={view.record} onAgain={goHome} onPractice={startPractice} />}
       </main>
     </>

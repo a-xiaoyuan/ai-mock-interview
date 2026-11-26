@@ -23,6 +23,8 @@ interface Props {
   state: CodeState;
   onChange: (update: CodeUpdate) => void;
   runners: RunnerLanguage[];
+  /** 一种语言都跑不了时的说明；不传则用原来的「只在本机访问时可用」 */
+  runnerNote?: string;
   /** 面试官正在说话或评分时不能提交 */
   busy: boolean;
   onSubmit: (extra: {
@@ -40,7 +42,7 @@ type CodeUpdate = CodeState | ((prev: CodeState) => CodeState);
 const INDENT = '    ';
 
 /** 算法题的代码面板：题目、编辑器、自定义输入和运行结果 */
-export function CodePanel({ question, state, onChange, runners, busy, onSubmit }: Props) {
+export function CodePanel({ question, state, onChange, runners, runnerNote, busy, onSubmit }: Props) {
   const [running, setRunning] = useState(false);
   const [judging, setJudging] = useState(false);
   const [error, setError] = useState<{ scope: 'run' | 'judge'; text: string } | null>(null);
@@ -129,7 +131,7 @@ export function CodePanel({ question, state, onChange, runners, busy, onSubmit }
           {LANGUAGES.map((l) => (
             <option key={l.id} value={l.id}>
               {l.name}
-              {runners.length > 0 && !runners.some((r) => r.id === l.id) ? '（本机不能运行）' : ''}
+              {runners.length > 0 && !runners.some((r) => r.id === l.id) ? '（不能运行）' : ''}
             </option>
           ))}
         </select>
@@ -138,12 +140,12 @@ export function CodePanel({ question, state, onChange, runners, busy, onSubmit }
           重置
         </button>
         <span className="spacer" />
-        <button className="sm" onClick={run} disabled={!runner || running || judging} title={runner ? `${runner.version}（Ctrl + Enter）` : runnerHint(runners)}>
+        <button className="sm" onClick={run} disabled={!runner || running || judging} title={runner ? `${runner.version}（Ctrl + Enter）` : runnerHint(runners, runnerNote)}>
           {running ? <span className="spinner" /> : <Icon name="play" size={13} />}
           运行
         </button>
         {cases.length > 0 && (
-          <button className="sm" onClick={judge} disabled={!runner || running || judging} title={runner ? '用预置用例判题' : runnerHint(runners)}>
+          <button className="sm" onClick={judge} disabled={!runner || running || judging} title={runner ? '用预置用例判题' : runnerHint(runners, runnerNote)}>
             {judging ? <span className="spinner" /> : <Icon name="check" size={14} />}
             判题
           </button>
@@ -191,7 +193,7 @@ export function CodePanel({ question, state, onChange, runners, busy, onSubmit }
               {judgeStatus && <i className={judgeStatus.ok ? 'ok' : 'bad'} />}
             </button>
           )}
-          {!runner && <span className="io-note">{runnerHint(runners)}</span>}
+          {!runner && <span className="io-note">{runnerHint(runners, runnerNote)}</span>}
         </div>
         {tab === 'input' ? (
           <textarea
@@ -306,8 +308,9 @@ export function CodePanel({ question, state, onChange, runners, busy, onSubmit }
   );
 }
 
-function runnerHint(runners: RunnerLanguage[]) {
-  return runners.length ? '本机没有这门语言的运行环境，可以换一门语言，或者直接提交代码' : '代码运行只在本机访问时可用，仍然可以写好后提交';
+function runnerHint(runners: RunnerLanguage[], note?: string) {
+  if (!runners.length) return note || '代码运行只在本机访问时可用，仍然可以写好后提交';
+  return '这门语言当前不能运行，可以换一门，或者直接提交代码';
 }
 
 /** 等宽编辑器：Tab 缩进、回车保持缩进、Ctrl + Enter 运行，左侧显示行号 */

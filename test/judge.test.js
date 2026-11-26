@@ -18,7 +18,7 @@ const {
 const { ALGO_PROBLEMS } = require('../lib/algo-bank');
 const { applyPreset, withMockAlgo } = require('../lib/preset');
 const { parsePack } = require('../lib/packs');
-const { judgeCases, detectLanguages } = require('../lib/runner');
+const { judgeCases, detectLanguages, sandboxStatus } = require('../lib/runner');
 
 const root = path.join(__dirname, '..');
 
@@ -295,7 +295,8 @@ test('预置算法题的参考解能通过全部用例，写错的解会逐例�
   assert.match(wrong.summary, /判题结果：1\/2 通过/);
 });
 
-test('运行错误、超时，以及密钥环境变量不会传给用户代码', async () => {
+test('运行错误、超时，以及密钥环境变量不会传给用户代码', { timeout: 60_000 }, async () => {
+  const isolated = sandboxStatus().useContainer;
   const crashed = await judgeCases({
     language: 'javascript',
     code: `process.exit(2);\n`,
@@ -308,7 +309,8 @@ test('运行错误、超时，以及密钥环境变量不会传给用户代码',
     language: 'javascript',
     code: `while (true) {}\n`,
     cases: [{ name: '死循环', input: '', output: '1' }],
-    timeLimitMs: 800,
+    // 容器要先启动，时限太短会在程序跑起来之前被杀掉，仍然算超时，但这里留出启动时间
+    timeLimitMs: isolated ? 8000 : 800,
   });
   assert.equal(timed.cases[0].status, 'timeout');
   assert.equal(timed.passed, 0);
@@ -317,6 +319,8 @@ test('运行错误、超时，以及密钥环境变量不会传给用户代码',
   const previous = new Map(keys.map((k) => [k, process.env[k]]));
   process.env.MOCK_INTERVIEW_PLAIN = 'visible';
   for (const k of keys) process.env[k] = `secret-${k}`;
+  // 本机进程会带上非密钥变量；容器只带固定环境变量，连这个普通变量也不会出现
+  const expected = JSON.stringify({ leak: [], plain: isolated ? '' : 'visible' });
   try {
     const probe = await judgeCases({
       language: 'javascript',
@@ -324,7 +328,7 @@ test('运行错误、超时，以及密钥环境变量不会传给用户代码',
 const leak = keys.filter((k) => process.env[k]);
 console.log(JSON.stringify({ leak, plain: process.env.MOCK_INTERVIEW_PLAIN || '' }));
 `,
-      cases: [{ name: '环境', input: '', output: '{"leak":[],"plain":"visible"}' }],
+      cases: [{ name: '环境', input: '', output: expected }],
     });
     assert.equal(probe.cases[0].status, 'passed', probe.cases[0].stdout + probe.cases[0].stderr);
   } finally {
@@ -410,7 +414,7 @@ test('接口：大纲带上预置用例，提交后能判题，关闭运行器�
   const port = 20000 + Math.floor(Math.random() * 20000);
   const child = spawn(process.execPath, ['server.js'], {
     cwd: root,
-    env: { ...process.env, PORT: String(port), LLM_API_KEY: '', CODE_RUNNER: 'local' },
+    env: { ...process.env, PORT: String(port), LLM_API_KEY: '', CODE_RUNNER: 'local', CODE_SANDBOX: 'auto' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let logs = '';
@@ -420,6 +424,10 @@ test('接口：大纲带上预置用例，提交后能判题，关闭运行器�
     const config = await waitFor(port);
     assert.equal(config.mock, true);
     assert.ok(config.runner.some((l) => l.id === 'javascript'));
+    assert.equal(config.sandbox.mode, 'auto');
+    assert.equal(config.sandbox.error, null);
+    if (config.sandbox.active) assert.equal(config.sandbox.fallback, null);
+    else assert.ok(config.sandbox.fallback);
 
     const plan = await request(port, 'POST', '/api/plan', {
       role: '测试开发',

@@ -15,11 +15,13 @@ interface Props {
   config: InterviewConfig;
   plan: Plan;
   onDone: (record: InterviewRecord) => void;
-  /** 本机可以运行代码的语言 */
+  /** 当前可以运行代码的语言 */
   runners?: RunnerLanguage[];
+  /** 运行器不可用时的说明，例如要求容器沙箱但本机没有容器运行时 */
+  runnerNote?: string;
 }
 
-export function InterviewPage({ config, plan, onDone, runners = [] }: Props) {
+export function InterviewPage({ config, plan, onDone, runners = [], runnerNote }: Props) {
   const iv = useInterview(config, plan, onDone);
   const [draft, setDraft] = useState('');
   const draftRef = useRef(draft);
@@ -260,6 +262,7 @@ export function InterviewPage({ config, plan, onDone, runners = [] }: Props) {
             })
           }
           runners={runners}
+          runnerNote={runnerNote}
           busy={iv.busy}
           onSubmit={submitCode}
         />

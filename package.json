@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test test/*.test.js",
     "eval": "node scripts/eval-judge.mjs",
-    "check-packs": "node scripts/check-packs.cjs"
+    "check-packs": "node scripts/check-packs.cjs",
+    "sandbox-image": "node scripts/sandbox-image.cjs"
   },
   "engines": {
     "node": ">=20.19"

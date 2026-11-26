@@ -1,6 +1,6 @@
 // AI 模拟面试后端 —— 零依赖 Node 服务（Node 18+）
 // 开发：npm run dev（Vite 5173 + 本服务 3000）  生产：npm run build && npm start
-// 配置 .env（可选）：LLM_BASE_URL / LLM_API_KEY / LLM_MODEL / LLM_FAST_MODEL / PORT / CODE_RUNNER
+// 配置 .env（可选）：LLM_BASE_URL / LLM_API_KEY / LLM_MODEL / LLM_FAST_MODEL / PORT / CODE_RUNNER / CODE_SANDBOX
 // 没有配置 LLM_API_KEY 时自动进入 mock 模式，可直接体验完整流程。
 
 const http = require('http');
@@ -21,7 +21,8 @@ const CFG = {
   model: process.env.LLM_MODEL || 'deepseek-chat',
   fastModel: process.env.LLM_FAST_MODEL || process.env.LLM_MODEL || 'deepseek-chat',
   jsonMode: process.env.LLM_JSON_MODE === '1',
-  // 算法题的自定义运行和预置用例判题共用这个开关：local（默认）只接受本机请求；on 允许任何来源（公网部署不要开，这不是沙箱）；off 关闭
+  // 谁可以调用运行接口：local（默认）只接受本机请求；on 允许任何来源；off 关闭。
+  // 代码在容器里还是在本机进程里，由 CODE_SANDBOX 决定（见 lib/runner.js）。公网要开放运行，需要 CODE_RUNNER=on 且 CODE_SANDBOX=on。
   codeRunner: ['on', 'off'].includes(process.env.CODE_RUNNER) ? process.env.CODE_RUNNER : 'local',
 };
 const MOCK = !CFG.apiKey;
@@ -416,23 +417,37 @@ async function streamText(res, text) {
 
 // ---------- 路由 ----------
 const routes = {
-  'GET /api/config': async (_b, _res, req) => ({
-    mock: MOCK,
-    model: MOCK ? 'mock' : CFG.model,
-    runner: runnerAllowed(req) ? runner.detectLanguages().map(({ id, name, version }) => ({ id, name, version })) : [],
-  }),
+  'GET /api/config': async (_b, _res, req) => {
+    const allowed = runnerAllowed(req);
+    const status = allowed ? runner.sandboxStatus() : null;
+    return {
+      mock: MOCK,
+      model: MOCK ? 'mock' : CFG.model,
+      runner: allowed ? runner.detectLanguages().map(({ id, name, version }) => ({ id, name, version })) : [],
+      sandbox: status
+        ? {
+            mode: status.mode,
+            active: status.useContainer,
+            runtime: status.runtime,
+            image: status.image,
+            fallback: status.fallback,
+            error: status.error,
+          }
+        : null,
+    };
+  },
 
   'POST /api/run': async (b, _res, req) => {
-    if (!runnerAllowed(req)) throw new Error('代码运行只对本机开放（可以用 CODE_RUNNER=on 打开，公网部署时不要这样做）');
+    if (!runnerAllowed(req)) throw new Error('代码运行只对本机开放。要对公网开放，需要 CODE_RUNNER=on，并且 CODE_SANDBOX=on（容器隔离，仍不是绝对安全）；否则请保持关闭');
     const code = String(b.code || '');
     if (!code.trim()) throw new Error('代码为空');
     if (code.length > 50000) throw new Error('代码太长');
     return runner.runCode({ language: String(b.language || ''), code, stdin: String(b.stdin || '').slice(0, 100000) });
   },
 
-  // 预置用例判题。和 /api/run 同一套运行器、同一道 CODE_RUNNER 开关，不是容器沙箱。
+  // 预置用例判题。和 /api/run 同一套运行器、同一道 CODE_RUNNER / CODE_SANDBOX 开关。
   'POST /api/judge-code': async (b, _res, req) => {
-    if (!runnerAllowed(req)) throw new Error('代码运行只对本机开放（可以用 CODE_RUNNER=on 打开，公网部署时不要这样做）');
+    if (!runnerAllowed(req)) throw new Error('代码运行只对本机开放。要对公网开放，需要 CODE_RUNNER=on，并且 CODE_SANDBOX=on（容器隔离，仍不是绝对安全）；否则请保持关闭');
     const code = String(b.code || '');
     if (!code.trim()) throw new Error('代码为空');
     if (code.length > 50000) throw new Error('代码太长');
@@ -515,7 +530,7 @@ const routes = {
   },
 };
 
-/** 代码以服务进程的权限运行（自定义运行和自动判题都走这里），默认只接受来自本机的请求 */
+/** 自定义运行和自动判题都走这里。默认只接受来自本机的请求；真正在哪跑由 CODE_SANDBOX 决定。 */
 function runnerAllowed(req) {
   if (CFG.codeRunner === 'off') return false;
   if (CFG.codeRunner === 'on') return true;
@@ -606,7 +621,12 @@ server.listen(CFG.port, () => {
   if (!fs.existsSync(path.join(DIST, 'index.html'))) console.log('（dist/ 不存在：开发请访问 Vite 的 http://localhost:5173，或先 npm run build）');
   console.log(MOCK ? '当前为 mock 模式（未配置 LLM_API_KEY）' : `模型：${CFG.model} @ ${CFG.baseUrl}`);
   if (CFG.codeRunner !== 'off') {
+    const status = runner.sandboxStatus();
     const langs = runner.detectLanguages().map((l) => l.name);
-    console.log(`算法题可运行的语言：${langs.join('、') || '无'}${CFG.codeRunner === 'local' ? '（只对本机开放）' : ''}`);
+    const access = CFG.codeRunner === 'local' ? '，只对本机开放' : '，允许非本机访问';
+    console.log(`算法题可运行的语言：${langs.join('、') || '无'}（${runner.describeSandbox(status)}）${access}`);
+    if (CFG.codeRunner === 'on' && !status.useContainer) {
+      console.log('警告：CODE_RUNNER=on，但候选人代码没有在容器里跑。公网部署请把 CODE_SANDBOX 设为 on，或把 CODE_RUNNER 设为 off。');
+    }
   }
 });
