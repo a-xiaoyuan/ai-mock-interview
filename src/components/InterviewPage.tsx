@@ -2,17 +2,22 @@ import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from 'react
 import { MAX_DEPTH } from '../constants';
 import { useInterview } from '../hooks/useInterview';
 import { useDictation, useSpeaker } from '../hooks/useSpeech';
-import type { InterviewConfig, InterviewRecord, Plan } from '../types';
+import { defaultLanguage, formatSubmission } from '../lib/code';
+import type { InterviewConfig, InterviewRecord, Plan, RunnerLanguage } from '../types';
+import { CodePanel, currentCode, newCodeState, type CodeState } from './CodePanel';
 import { Icon } from './Icon';
+import { RichText } from './RichText';
 import { ScoreBars } from './ScoreBars';
 
 interface Props {
   config: InterviewConfig;
   plan: Plan;
   onDone: (record: InterviewRecord) => void;
+  /** 本机可以运行代码的语言 */
+  runners?: RunnerLanguage[];
 }
 
-export function InterviewPage({ config, plan, onDone }: Props) {
+export function InterviewPage({ config, plan, onDone, runners = [] }: Props) {
   const iv = useInterview(config, plan, onDone);
   const [draft, setDraft] = useState('');
   const [showLive, setShowLive] = useState(false);
@@ -20,6 +25,10 @@ export function InterviewPage({ config, plan, onDone }: Props) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const questions = plan.questions;
   const current = questions[iv.qi];
+  // 算法题旁边打开代码面板；每道算法题各自保留代码
+  const coding = current.stage === '算法' && !iv.finished;
+  const [codeStates, setCodeStates] = useState<Record<number, CodeState>>({});
+  const codeState = codeStates[iv.qi] ?? newCodeState(defaultLanguage(config.role));
   const speaker = useSpeaker();
   // 识别出的整句接到草稿后面；语音识别不带标点，句与句之间补一个逗号
   const dict = useDictation((text) => setDraft((d) => (!d.trim() ? text : /[\p{P}\s]$/u.test(d) ? d + text : `${d}，${text}`)));
@@ -55,14 +64,23 @@ export function InterviewPage({ config, plan, onDone }: Props) {
     if (!iv.busy) inputRef.current?.focus();
   }, [iv.busy]);
 
-  async function send() {
-    const text = draft.trim();
+  async function submit(text: string, restore: string) {
     if (!text || iv.busy) return;
     dict.cancel();
     speaker.stop();
     setDraft('');
     const ok = await iv.answer(text);
-    if (!ok) setDraft(text);
+    if (!ok) setDraft(restore);
+  }
+
+  const send = () => submit(draft.trim(), draft);
+
+  /** 提交代码：输入框里的文字作为思路说明一起发出；最近一次运行的代码没改过才附上结果 */
+  function submitCode() {
+    const code = currentCode(codeState);
+    const last = codeState.last;
+    const run = last && last.code === code ? { stdin: last.stdin, result: last.result } : undefined;
+    submit(formatSubmission({ note: draft, language: codeState.language, code, run }), draft);
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -89,7 +107,7 @@ export function InterviewPage({ config, plan, onDone }: Props) {
     i === iv.qi && !iv.finished ? 'now' : i < iv.qi || iv.finished ? (iv.chains[i]?.some((t) => t.role === 'candidate') ? 'done' : 'skipped') : 'todo';
 
   return (
-    <section className="interview">
+    <section className={`interview${coding ? ' coding' : ''}`}>
       <div className="card chat">
         <div className="chat-head">
           <span className="chip brand num">
@@ -154,7 +172,13 @@ export function InterviewPage({ config, plan, onDone }: Props) {
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={onKeyDown}
-              placeholder={dict.listening ? '正在听你说，说完点麦克风结束，可以再修改后发送…' : '输入你的回答…（Ctrl + Enter 发送）'}
+              placeholder={
+                dict.listening
+                  ? '正在听你说，说完点麦克风结束，可以再修改后发送…'
+                  : coding
+                    ? '可以先在这里写思路，点「提交代码」时会和代码一起发出；回答追问直接发送（Ctrl + Enter）'
+                    : '输入你的回答…（Ctrl + Enter 发送）'
+              }
               aria-label="你的回答"
               disabled={iv.busy}
             />
@@ -202,6 +226,18 @@ export function InterviewPage({ config, plan, onDone }: Props) {
           )}
         </div>
       </div>
+
+      {coding && (
+        <CodePanel
+          key={iv.qi}
+          question={current}
+          state={codeState}
+          onChange={(next) => setCodeStates((m) => ({ ...m, [iv.qi]: next }))}
+          runners={runners}
+          busy={iv.busy}
+          onSubmit={submitCode}
+        />
+      )}
 
       <aside className="side">
         <div className="card">
@@ -274,7 +310,7 @@ export function InterviewPage({ config, plan, onDone }: Props) {
 }
 
 function Message({ role, text, typing = false }: { role: 'interviewer' | 'candidate'; text: string; typing?: boolean }) {
-  const body = typing && !text ? <span className="thinking dots">正在思考</span> : text;
+  const body = typing && !text ? <span className="thinking dots">正在思考</span> : <RichText text={text} />;
   if (role === 'candidate') {
     return (
       <div className="msg candidate">

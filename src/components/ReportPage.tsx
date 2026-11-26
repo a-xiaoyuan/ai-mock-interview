@@ -1,6 +1,7 @@
 import { dimensionAverages, questionPercent } from '../lib/score';
 import type { InterviewRecord, ReportItem } from '../types';
 import { Icon } from './Icon';
+import { RichText } from './RichText';
 import { PracticeButton, type StartPractice } from './PracticeButton';
 import { ScoreBars } from './ScoreBars';
 
@@ -163,7 +164,9 @@ function QuestionReview({ index, item }: { index: number; item: ReportItem }) {
           {item.chain.map((t, i) => (
             <div key={i} className={`t-row ${t.role === 'interviewer' ? 'iv' : 'me'}`}>
               <span className="t-who">{t.role === 'interviewer' ? '面试官' : '我'}</span>
-              <span className="t-text">{t.text}</span>
+              <span className="t-text">
+                <RichText text={t.text} />
+              </span>
             </div>
           ))}
         </div>

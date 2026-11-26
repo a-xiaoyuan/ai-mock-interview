@@ -95,7 +95,7 @@ export default function App() {
           />
         )}
         {view.name === 'bank' && <BankPage />}
-        {view.name === 'interview' && <InterviewPage key={view.key} config={view.config} plan={view.plan} onDone={onDone} />}
+        {view.name === 'interview' && <InterviewPage key={view.key} config={view.config} plan={view.plan} onDone={onDone} runners={server?.runner ?? []} />}
         {view.name === 'report' && <ReportPage record={view.record} onAgain={goHome} onPractice={startPractice} />}
       </main>
     </>

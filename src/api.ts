@@ -1,5 +1,5 @@
 import { bankPoolFor } from './lib/bank';
-import type { AskMode, InterviewConfig, PackSummary, InterviewStyle, Judgement, Plan, Question, ReportItem, Review, ServerConfig, Turn } from './types';
+import type { AskMode, InterviewConfig, LanguageId, PackSummary, InterviewStyle, Judgement, Plan, Question, ReportItem, Review, RunResult, ServerConfig, Turn } from './types';
 
 async function request<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
@@ -32,6 +32,9 @@ export function createPlan(config: InterviewConfig) {
 /** 把面经原文整理成题目；existing 是题库已有的题，模型据此标出重复（duplicateOf 为重复的题库条目 id） */
 export const extractQuestions = (body: { text: string; role: string; existing: { id: string; question: string; topic: string }[] }) =>
   request<{ questions: (Question & { duplicateOf?: string })[] }>('/api/extract', body);
+
+/** 在本机运行算法题代码 */
+export const runCode = (body: { language: LanguageId; code: string; stdin: string }) => request<RunResult>('/api/run', body);
 
 export const getPacks = () => request<PackSummary[]>('/api/packs');
 

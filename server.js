@@ -1,12 +1,13 @@
 // AI 模拟面试后端 —— 零依赖 Node 服务（Node 18+）
 // 开发：npm run dev（Vite 5173 + 本服务 3000）  生产：npm run build && npm start
-// 配置 .env（可选）：LLM_BASE_URL / LLM_API_KEY / LLM_MODEL / LLM_FAST_MODEL / PORT
+// 配置 .env（可选）：LLM_BASE_URL / LLM_API_KEY / LLM_MODEL / LLM_FAST_MODEL / PORT / CODE_RUNNER
 // 没有配置 LLM_API_KEY 时自动进入 mock 模式，可直接体验完整流程。
 
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { loadPacks, getPack, resolvePack } = require('./lib/packs');
+const runner = require('./lib/runner');
 
 // ---------- 配置 ----------
 loadEnv(path.join(__dirname, '.env'));
@@ -17,6 +18,8 @@ const CFG = {
   model: process.env.LLM_MODEL || 'deepseek-chat',
   fastModel: process.env.LLM_FAST_MODEL || process.env.LLM_MODEL || 'deepseek-chat',
   jsonMode: process.env.LLM_JSON_MODE === '1',
+  // 算法题的代码运行：local（默认）只接受本机请求；on 允许任何来源（部署到公网时不要开）；off 关闭
+  codeRunner: ['on', 'off'].includes(process.env.CODE_RUNNER) ? process.env.CODE_RUNNER : 'local',
 };
 const MOCK = !CFG.apiKey;
 const MAX_DEPTH = 3;
@@ -53,7 +56,8 @@ const PROMPTS = {
             ? `- 共 ${count} 道题；约一半来自候选人简历里的具体项目（引用项目名和技术点），其余为与岗位和 JD 相关的八股和场景题。\n`
             : `- 共 ${count} 道题；候选人没有提供简历，不要出项目深挖题，也不要虚构候选人做过的项目，全部出与岗位和 JD 相关的八股题和场景题（场景题可以设定一个通用业务背景，但不能说成是候选人的项目）。\n`) +
         '- 题目由浅入深；每题只问一件事，不要一题多问。\n' +
-        '- points 写 3-5 条优秀回答应覆盖的要点，供评分对照，要准确。' +
+        '- points 写 3-5 条优秀回答应覆盖的要点，供评分对照，要准确。\n' +
+        '- 算法题会给候选人一个代码编辑器，可以在本机运行：question 要写清题意、输入输出格式（从标准输入读、向标准输出打印）和一组样例；points 写思路、时间和空间复杂度、要注意的边界。' +
         (bank.length
           ? '\n- 用户消息里附有候选人收集的真实面经题库（编号 B1、B2…，来自真实面试，优先级高）。' +
             (focus
@@ -132,6 +136,7 @@ const PROMPTS = {
         '- depth 深度：是否讲到底层机制、边界、取舍。\n' +
         '- practical 实战关联：是否结合自己的项目或真实场景、有具体数据。\n' +
         '- expression 表达：是否先结论后展开、有条理。\n' +
+        '算法题：候选人可能贴出代码和运行结果。accuracy 看思路和代码是否正确，depth 看复杂度分析和能否优化，practical 看是否自己构造了边界用例验证；只说思路没写代码的，accuracy 不超过 3。追问优先问复杂度、边界用例或更优解。\n' +
         '追问规则：回答好 → 往深挖（原理/边界/为什么不用替代方案）；回答模糊 → 要具体（数据量、QPS、个人负责部分）；答错或不会 → 给一次提示性追问，再不会就 next。\n' +
         'direction 要求：只写一个点，一句话，描述“要考察什么”，不要写出答案、不要列出可选的技术方案名（面试官会照着问，写了等于泄题）；不要重复问答链里已经问过的点。' +
         '提示性追问只指出思考方向（例如“从并发写入的先后顺序想想会出什么问题”），不能说出方案本身。\n' +
@@ -403,7 +408,19 @@ async function streamText(res, text) {
 
 // ---------- 路由 ----------
 const routes = {
-  'GET /api/config': async () => ({ mock: MOCK, model: MOCK ? 'mock' : CFG.model }),
+  'GET /api/config': async (_b, _res, req) => ({
+    mock: MOCK,
+    model: MOCK ? 'mock' : CFG.model,
+    runner: runnerAllowed(req) ? runner.detectLanguages().map(({ id, name, version }) => ({ id, name, version })) : [],
+  }),
+
+  'POST /api/run': async (b, _res, req) => {
+    if (!runnerAllowed(req)) throw new Error('代码运行只对本机开放（可以用 CODE_RUNNER=on 打开，公网部署时不要这样做）');
+    const code = String(b.code || '');
+    if (!code.trim()) throw new Error('代码为空');
+    if (code.length > 50000) throw new Error('代码太长');
+    return runner.runCode({ language: String(b.language || ''), code, stdin: String(b.stdin || '').slice(0, 100000) });
+  },
 
   // 题包列表（只返回概要，指引和评分要点留在服务端）
   'GET /api/packs': async () =>
@@ -478,6 +495,14 @@ const routes = {
   },
 };
 
+/** 代码以服务进程的权限运行，默认只接受来自本机的请求 */
+function runnerAllowed(req) {
+  if (CFG.codeRunner === 'off') return false;
+  if (CFG.codeRunner === 'on') return true;
+  const ip = req.socket.remoteAddress || '';
+  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+}
+
 // ---------- 静态文件（npm run build 生成的 dist/） ----------
 const DIST = path.join(__dirname, 'dist');
 const MIME = {
@@ -534,7 +559,7 @@ const server = http.createServer(async (req, res) => {
   if (!handler) { res.writeHead(404); return res.end('Not found'); }
   try {
     const body = req.method === 'POST' ? await readBody(req) : {};
-    const out = await handler(body, res);
+    const out = await handler(body, res, req);
     if (!res.headersSent) {
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify(out));
@@ -552,4 +577,8 @@ server.listen(CFG.port, () => {
   console.log(`AI 模拟面试服务已启动：http://localhost:${CFG.port}`);
   if (!fs.existsSync(path.join(DIST, 'index.html'))) console.log('（dist/ 不存在：开发请访问 Vite 的 http://localhost:5173，或先 npm run build）');
   console.log(MOCK ? '当前为 mock 模式（未配置 LLM_API_KEY）' : `模型：${CFG.model} @ ${CFG.baseUrl}`);
+  if (CFG.codeRunner !== 'off') {
+    const langs = runner.detectLanguages().map((l) => l.name);
+    console.log(`算法题可运行的语言：${langs.join('、') || '无'}${CFG.codeRunner === 'local' ? '（只对本机开放）' : ''}`);
+  }
 });

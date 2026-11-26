@@ -114,4 +114,25 @@ export type AskMode = 'open' | 'follow' | 'next';
 export interface ServerConfig {
   mock: boolean;
   model: string;
+  /** 本机可以运行代码的语言；为空表示不能运行（服务端关闭了，或不是本机访问） */
+  runner?: RunnerLanguage[];
+}
+
+export type LanguageId = 'javascript' | 'python' | 'java' | 'cpp' | 'go';
+
+export interface RunnerLanguage {
+  id: LanguageId;
+  name: string;
+  version: string;
+}
+
+export interface RunResult {
+  /** compile：编译阶段就失败了；run：程序运行的结果 */
+  stage: 'compile' | 'run';
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  timeMs: number;
+  timedOut: boolean;
+  truncated: boolean;
 }
