@@ -24,6 +24,9 @@ export function InterviewPage({ config, plan, onDone, runners = [] }: Props) {
   const [draft, setDraft] = useState('');
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  // 当前题号的最新值：提交代码是异步的，判题回来时可能已经切题，校验要用 ref 读最新题号（同 draftRef 的道理）
+  const qiRef = useRef(iv.qi);
+  qiRef.current = iv.qi;
   const [showLive, setShowLive] = useState(false);
   const msgsRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -81,6 +84,7 @@ export function InterviewPage({ config, plan, onDone, runners = [] }: Props) {
 
   /** 提交代码：思路说明、判题结果和没改过的自定义运行一起发出 */
   function submitCode(extra: {
+    qi: number;
     code: string;
     language: LanguageId;
     run?: { stdin: string; result: RunResult };
@@ -88,6 +92,8 @@ export function InterviewPage({ config, plan, onDone, runners = [] }: Props) {
     judgeError?: string;
     skippedCases?: boolean;
   }) {
+    // 判题期间切了题：这份代码属于提交时的那道题，不能算到当前题头上，直接丢弃
+    if (extra.qi !== qiRef.current) return;
     const note = draftRef.current;
     submit(
       formatSubmission({
@@ -251,6 +257,7 @@ export function InterviewPage({ config, plan, onDone, runners = [] }: Props) {
         <CodePanel
           key={iv.qi}
           question={current}
+          questionIndex={iv.qi}
           state={codeState}
           onChange={(update) =>
             setCodeStates((m) => {
