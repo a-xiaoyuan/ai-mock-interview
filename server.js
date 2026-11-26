@@ -8,6 +8,9 @@ const fs = require('fs');
 const path = require('path');
 const { loadPacks, getPack, resolvePack } = require('./lib/packs');
 const runner = require('./lib/runner');
+const { normCases, mockJudgeFromCases } = require('./lib/cases');
+const { algoCatalog } = require('./lib/algo-bank');
+const { applyPreset, withMockAlgo } = require('./lib/preset');
 
 // ---------- 配置 ----------
 loadEnv(path.join(__dirname, '.env'));
@@ -18,7 +21,7 @@ const CFG = {
   model: process.env.LLM_MODEL || 'deepseek-chat',
   fastModel: process.env.LLM_FAST_MODEL || process.env.LLM_MODEL || 'deepseek-chat',
   jsonMode: process.env.LLM_JSON_MODE === '1',
-  // 算法题的代码运行：local（默认）只接受本机请求；on 允许任何来源（部署到公网时不要开）；off 关闭
+  // 算法题的自定义运行和预置用例判题共用这个开关：local（默认）只接受本机请求；on 允许任何来源（公网部署不要开，这不是沙箱）；off 关闭
   codeRunner: ['on', 'off'].includes(process.env.CODE_RUNNER) ? process.env.CODE_RUNNER : 'local',
 };
 const MOCK = !CFG.apiKey;
@@ -46,7 +49,7 @@ const PROMPTS = {
       role: 'system',
       content:
         '你是一位资深技术面试官，负责为一场模拟面试制定大纲。只输出 JSON，不要任何解释或 markdown。\n' +
-        'JSON 格式：{"questions":[{"stage":"项目深挖|八股|场景题|算法","topic":"知识点短语","question":"主问题","points":["参考要点1","参考要点2","参考要点3"],"from":"选自面经题库填编号如 B3，选自题包填编号如 P2，否则填空字符串"}]}\n' +
+        'JSON 格式：{"questions":[{"stage":"项目深挖|八股|场景题|算法","topic":"知识点短语","question":"主问题","points":["参考要点1","参考要点2","参考要点3"],"from":"选自面经题库填编号如 B3，选自题包填编号如 P2，选自预置算法题填编号如 A1，否则填空字符串"}]}\n' +
         (pack ? `本场使用题包「${pack.name}」，以下是这类面试的出题指引，必须遵守：\n${pack.guide}\n\n` : '') +
         '规则：\n' +
         (focus
@@ -57,7 +60,10 @@ const PROMPTS = {
             : `- 共 ${count} 道题；候选人没有提供简历，不要出项目深挖题，也不要虚构候选人做过的项目，全部出与岗位和 JD 相关的八股题和场景题（场景题可以设定一个通用业务背景，但不能说成是候选人的项目）。\n`) +
         '- 题目由浅入深；每题只问一件事，不要一题多问。\n' +
         '- points 写 3-5 条优秀回答应覆盖的要点，供评分对照，要准确。\n' +
-        '- 算法题会给候选人一个代码编辑器，可以在本机运行：question 要写清题意、输入输出格式（从标准输入读、向标准输出打印）和一组样例；points 写思路、时间和空间复杂度、要注意的边界。' +
+        '- 算法题会给候选人一个代码编辑器，可以在本机试跑，带预置用例的题在提交后会自动判题。编程题优先从下面的预置算法题里选一道（一场最多一道），from 填 A 编号；题面和测试用例以预置题为准，不要自己编输入输出。预置题都是从标准输入读、向标准输出写。题包里标了「有预置测试用例」的算法题同样会自动判题，from 填 P 编号即可。不选这些题时可以出口述题（讲思路和复杂度），不要编测试用例。\n' +
+        '预置算法题：\n' +
+        algoCatalog() +
+        '\n' +
         (bank.length
           ? '\n- 用户消息里附有候选人收集的真实面经题库（编号 B1、B2…，来自真实面试，优先级高）。' +
             (focus
@@ -84,7 +90,8 @@ const PROMPTS = {
               .join('\n')
           : '') +
         (pack && pack.questions.length
-          ? '\n\n题包精选题：\n' + pack.questions.map((q, i) => `P${i + 1}【${q.stage}·${q.topic}】${q.question}`).join('\n')
+          ? '\n\n题包精选题：\n' +
+            pack.questions.map((q, i) => `P${i + 1}【${q.stage}·${q.topic}】${q.question}${q.cases?.length ? '（有预置测试用例，提交后自动判题）' : ''}`).join('\n')
           : ''),
     },
   ],
@@ -136,7 +143,7 @@ const PROMPTS = {
         '- depth 深度：是否讲到底层机制、边界、取舍。\n' +
         '- practical 实战关联：是否结合自己的项目或真实场景、有具体数据。\n' +
         '- expression 表达：是否先结论后展开、有条理。\n' +
-        '算法题：候选人可能贴出代码和运行结果。accuracy 看思路和代码是否正确，depth 看复杂度分析和能否优化，practical 看是否自己构造了边界用例验证；只说思路没写代码的，accuracy 不超过 3。追问优先问复杂度、边界用例或更优解。\n' +
+        '算法题：候选人可能贴出代码、自己试跑的结果，以及「判题结果」（预置用例通过了几个）。有判题结果时，accuracy 以通过情况为主：全部通过再看实现是否真按题意、有没有取巧；没全部通过就按失败扣分，direction 指向一个失败用例的边界，不要把期望输出写进 direction。没有判题结果时仍按原规则：accuracy 看思路和代码是否正确，depth 看复杂度分析和能否优化，practical 看是否自己构造了边界用例；只说思路没写代码的，accuracy 不超过 3。追问优先问复杂度、失败用例或更优解。\n' +
         '追问规则：回答好 → 往深挖（原理/边界/为什么不用替代方案）；回答模糊 → 要具体（数据量、QPS、个人负责部分）；答错或不会 → 给一次提示性追问，再不会就 next。\n' +
         'direction 要求：只写一个点，一句话，描述“要考察什么”，不要写出答案、不要列出可选的技术方案名（面试官会照着问，写了等于泄题）；不要重复问答链里已经问过的点。' +
         '提示性追问只指出思考方向（例如“从并发写入的先后顺序想想会出什么问题”），不能说出方案本身。\n' +
@@ -154,7 +161,8 @@ const PROMPTS = {
   interviewer: ({ style, role, mode, q, chain, direction, isLast }) => {
     const sys =
       `你是一位${role}方向的技术面试官，正在进行一场模拟面试。${STYLE[style] || STYLE.gentle}\n` +
-      '要求：只输出你要说的话（口语化，1-3 句），不要旁白、不要 markdown、不要给出答案或提示正确答案、不要评价候选人刚才答得好坏。';
+      '要求：只输出你要说的话（口语化，1-3 句），不要旁白、不要 markdown、不要给出答案或提示正确答案、不要评价候选人刚才答得好坏。' +
+      '如果候选人贴出了判题结果，追问可以指出哪一个用例没通过，但不要把期望输出说出来。';
     let task;
     if (mode === 'open') task = `先用一句话简短开场（不要自我介绍太长），然后问第一道题：「${q.question}」。可以稍作口语化改写，但不要改变考察点。`;
     else if (mode === 'follow')
@@ -288,14 +296,8 @@ function normPlan(p, count, bank = [], pack = null) {
     .map((q) => {
       const m = String(q.from || '').match(/B(\d+)/i);
       const b = m && bank[Number(m[1]) - 1];
-      const out = normQuestion(q);
-      // 选自题包的题，参考要点用题包里人工校对过的版本
-      const pm = String(q.from || '').match(/P(\d+)/i);
-      const pq = pm && pack && pack.questions[Number(pm[1]) - 1];
-      if (pq) {
-        out.points = pq.points;
-        out.pack = pack.id;
-      }
+      // 预置算法题、带用例的题包题：题面和用例以服务端为准。普通题包题仍只替换参考要点。
+      const out = applyPreset(normQuestion(q), q.from, pack);
       if (b && !used.has(b.id)) {
         used.add(b.id);
         out.from = b.id;
@@ -370,6 +372,8 @@ const mock = {
   },
   judge({ chain, depth }) {
     const ans = chain.filter((t) => t.role === 'candidate').map((t) => t.text).join('');
+    const fromCases = mockJudgeFromCases(ans, depth);
+    if (fromCases) return fromCases;
     const len = ans.length;
     const base = len > 200 ? 4 : len > 80 ? 3 : len > 20 ? 2 : 1;
     const hasNum = /\d/.test(ans);
@@ -383,7 +387,11 @@ const mock = {
   },
   interviewer({ mode, q, direction }) {
     if (mode === 'open') return `你好，我们开始吧，先从第一个问题聊起。${q.question}`;
-    if (mode === 'follow') return direction.includes('数据') ? '能具体一点吗？比如当时的数据量、QPS 或者耗时大概是多少？' : '为什么选这个方案？有没有考虑过别的做法，取舍是什么？';
+    if (mode === 'follow') {
+      if (direction.includes('用例') || direction.includes('编译') || direction.includes('报错')) return '有个用例没过。你觉得是哪种边界没考虑到？';
+      if (direction.includes('复杂度') || direction.includes('优化')) return '时间和空间复杂度分别是多少？还有没有更省的写法？';
+      return direction.includes('数据') ? '能具体一点吗？比如当时的数据量、QPS 或者耗时大概是多少？' : '为什么选这个方案？有没有考虑过别的做法，取舍是什么？';
+    }
     return `好的，我们换个话题。${q.question}`;
   },
   reviewer({ items, focus }) {
@@ -422,6 +430,17 @@ const routes = {
     return runner.runCode({ language: String(b.language || ''), code, stdin: String(b.stdin || '').slice(0, 100000) });
   },
 
+  // 预置用例判题。和 /api/run 同一套运行器、同一道 CODE_RUNNER 开关，不是容器沙箱。
+  'POST /api/judge-code': async (b, _res, req) => {
+    if (!runnerAllowed(req)) throw new Error('代码运行只对本机开放（可以用 CODE_RUNNER=on 打开，公网部署时不要这样做）');
+    const code = String(b.code || '');
+    if (!code.trim()) throw new Error('代码为空');
+    if (code.length > 50000) throw new Error('代码太长');
+    const cases = normCases(b.cases);
+    if (!cases.length) throw new Error('没有可运行的测试用例');
+    return runner.judgeCases({ language: String(b.language || ''), code, cases });
+  },
+
   // 题包列表（只返回概要，指引和评分要点留在服务端）
   'GET /api/packs': async () =>
     loadPacks().map((p) => ({ id: p.id, name: p.name, description: p.description, version: p.version, author: p.author, roles: p.roles, levels: p.levels, questionCount: p.questions.length })),
@@ -432,7 +451,8 @@ const routes = {
     const bank = normBank(b.bank);
     const pack = resolvePack(String(b.pack || ''), String(b.role || ''), String(b.level || ''));
     const args = { role: String(b.role || '后端开发'), level: String(b.level || '校招'), resume: String(b.resume || '').slice(0, 8000), jd: String(b.jd || '').slice(0, 4000), count, focus, bank, pack };
-    const raw = MOCK ? mock.plan(args) : await chatJSON(PROMPTS.planner(args), { model: CFG.model, temperature: 0.7 });
+    const planned = MOCK ? mock.plan(args) : await chatJSON(PROMPTS.planner(args), { model: CFG.model, temperature: 0.7 });
+    const raw = MOCK ? withMockAlgo(planned, args) : planned;
     return { ...normPlan(raw, count, bank, pack), pack: pack ? { id: pack.id, name: pack.name } : null };
   },
 
@@ -495,7 +515,7 @@ const routes = {
   },
 };
 
-/** 代码以服务进程的权限运行，默认只接受来自本机的请求 */
+/** 代码以服务进程的权限运行（自定义运行和自动判题都走这里），默认只接受来自本机的请求 */
 function runnerAllowed(req) {
   if (CFG.codeRunner === 'off') return false;
   if (CFG.codeRunner === 'on') return true;

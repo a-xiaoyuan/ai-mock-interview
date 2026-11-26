@@ -3,8 +3,8 @@ import { MAX_DEPTH } from '../constants';
 import { useInterview } from '../hooks/useInterview';
 import { useDictation, useSpeaker } from '../hooks/useSpeech';
 import { defaultLanguage, formatSubmission } from '../lib/code';
-import type { InterviewConfig, InterviewRecord, Plan, RunnerLanguage } from '../types';
-import { CodePanel, currentCode, newCodeState, type CodeState } from './CodePanel';
+import type { InterviewConfig, InterviewRecord, JudgeResult, LanguageId, Plan, RunnerLanguage, RunResult } from '../types';
+import { CodePanel, newCodeState, type CodeState } from './CodePanel';
 import { Icon } from './Icon';
 import { RichText } from './RichText';
 import { ScoreBars } from './ScoreBars';
@@ -20,6 +20,8 @@ interface Props {
 export function InterviewPage({ config, plan, onDone, runners = [] }: Props) {
   const iv = useInterview(config, plan, onDone);
   const [draft, setDraft] = useState('');
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   const [showLive, setShowLive] = useState(false);
   const msgsRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -75,12 +77,28 @@ export function InterviewPage({ config, plan, onDone, runners = [] }: Props) {
 
   const send = () => submit(draft.trim(), draft);
 
-  /** 提交代码：输入框里的文字作为思路说明一起发出；最近一次运行的代码没改过才附上结果 */
-  function submitCode() {
-    const code = currentCode(codeState);
-    const last = codeState.last;
-    const run = last && last.code === code ? { stdin: last.stdin, result: last.result } : undefined;
-    submit(formatSubmission({ note: draft, language: codeState.language, code, run }), draft);
+  /** 提交代码：思路说明、判题结果和没改过的自定义运行一起发出 */
+  function submitCode(extra: {
+    code: string;
+    language: LanguageId;
+    run?: { stdin: string; result: RunResult };
+    judge?: JudgeResult;
+    judgeError?: string;
+    skippedCases?: boolean;
+  }) {
+    const note = draftRef.current;
+    submit(
+      formatSubmission({
+        note,
+        language: extra.language,
+        code: extra.code,
+        run: extra.run,
+        judge: extra.judge,
+        judgeError: extra.judgeError,
+        skippedCases: extra.skippedCases,
+      }),
+      note,
+    );
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -232,7 +250,13 @@ export function InterviewPage({ config, plan, onDone, runners = [] }: Props) {
           key={iv.qi}
           question={current}
           state={codeState}
-          onChange={(next) => setCodeStates((m) => ({ ...m, [iv.qi]: next }))}
+          onChange={(update) =>
+            setCodeStates((m) => {
+              const prev = m[iv.qi] ?? newCodeState(defaultLanguage(config.role));
+              const next = typeof update === 'function' ? update(prev) : update;
+              return { ...m, [iv.qi]: next };
+            })
+          }
           runners={runners}
           busy={iv.busy}
           onSubmit={submitCode}
