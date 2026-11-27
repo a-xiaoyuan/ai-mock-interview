@@ -234,9 +234,15 @@ test('判题摘要能被 mock 评分认出来，后一次结果为准', () => {
 });
 
 const SOLVERS = {
-  'a-plus-b': `const fs = require('fs');
-const [a, b] = fs.readFileSync(0, 'utf8').trim().split(/\\s+/).map(Number);
-console.log(a + b);
+  'two-sum': `const fs = require('fs');
+const d = fs.readFileSync(0, 'utf8').trim().split(/\\s+/).map(Number);
+const [n, target] = d;
+const seen = new Map();
+for (let i = 0; i < n; i++) {
+  const x = d[2 + i];
+  if (seen.has(target - x)) { console.log(seen.get(target - x) + ' ' + i); break; }
+  seen.set(x, i);
+}
 `,
   'valid-parentheses': `const fs = require('fs');
 const s = fs.readFileSync(0, 'utf8').trim();
@@ -477,7 +483,7 @@ test('接口：大纲带上预置用例，提交后能判题，关闭运行器�
       cases: [{ input: '', output: '1' }],
     });
     assert.equal(denied.status, 500);
-    assert.match(denied.json.error, /本机开放/);
+    assert.match(denied.json.error, /已关闭/);
     const config = await request(offPort, 'GET', '/api/config');
     assert.deepEqual(config.json.runner, []);
   } finally {

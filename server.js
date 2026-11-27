@@ -438,7 +438,8 @@ const routes = {
   },
 
   'POST /api/run': async (b, _res, req) => {
-    if (!runnerAllowed(req)) throw new Error('代码运行只对本机开放。要对公网开放，需要 CODE_RUNNER=on，并且 CODE_SANDBOX=on（容器隔离，仍不是绝对安全）；否则请保持关闭');
+    const denied = runnerDenied(req);
+    if (denied) throw new Error(denied);
     const code = String(b.code || '');
     if (!code.trim()) throw new Error('代码为空');
     if (code.length > 50000) throw new Error('代码太长');
@@ -447,7 +448,8 @@ const routes = {
 
   // 预置用例判题。和 /api/run 同一套运行器、同一道 CODE_RUNNER / CODE_SANDBOX 开关。
   'POST /api/judge-code': async (b, _res, req) => {
-    if (!runnerAllowed(req)) throw new Error('代码运行只对本机开放。要对公网开放，需要 CODE_RUNNER=on，并且 CODE_SANDBOX=on（容器隔离，仍不是绝对安全）；否则请保持关闭');
+    const denied = runnerDenied(req);
+    if (denied) throw new Error(denied);
     const code = String(b.code || '');
     if (!code.trim()) throw new Error('代码为空');
     if (code.length > 50000) throw new Error('代码太长');
@@ -530,13 +532,21 @@ const routes = {
   },
 };
 
-/** 自定义运行和自动判题都走这里。默认只接受来自本机的请求；真正在哪跑由 CODE_SANDBOX 决定。 */
-function runnerAllowed(req) {
-  if (CFG.codeRunner === 'off') return false;
-  if (CFG.codeRunner === 'on') return true;
-  const ip = req.socket.remoteAddress || '';
-  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+const isLocalRequest = (req) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress || '');
+
+/**
+ * 自定义运行和自动判题都走这里。返回拒绝的原因，允许时返回空字符串。
+ * 本机请求：只要没关就允许。非本机请求：必须 CODE_RUNNER=on，而且代码此刻确实在容器里跑——
+ * CODE_SANDBOX=auto 在没有容器时会回退到本机进程，这时不能让外部的代码在服务器上直接执行。
+ */
+function runnerDenied(req) {
+  if (CFG.codeRunner === 'off') return '代码运行已关闭（CODE_RUNNER=off）';
+  if (isLocalRequest(req)) return '';
+  if (CFG.codeRunner !== 'on') return '代码运行只对本机开放。要对公网开放，需要 CODE_RUNNER=on，并且 CODE_SANDBOX=on（容器隔离，仍不是绝对安全）；否则请保持关闭';
+  if (!runner.sandboxStatus().useContainer) return '容器沙箱没有就绪，代码不会在服务器上直接运行。请检查 Docker / Podman 和沙箱镜像，或设置 CODE_SANDBOX=on 查看具体原因';
+  return '';
 }
+const runnerAllowed = (req) => !runnerDenied(req);
 
 // ---------- 静态文件（npm run build 生成的 dist/） ----------
 const DIST = path.join(__dirname, 'dist');
@@ -626,7 +636,7 @@ server.listen(CFG.port, () => {
     const access = CFG.codeRunner === 'local' ? '，只对本机开放' : '，允许非本机访问';
     console.log(`算法题可运行的语言：${langs.join('、') || '无'}（${runner.describeSandbox(status)}）${access}`);
     if (CFG.codeRunner === 'on' && !status.useContainer) {
-      console.log('警告：CODE_RUNNER=on，但候选人代码没有在容器里跑。公网部署请把 CODE_SANDBOX 设为 on，或把 CODE_RUNNER 设为 off。');
+      console.log('注意：CODE_RUNNER=on，但容器沙箱没有就绪。非本机的运行请求会被拒绝，本机访问仍在本机进程里运行。');
     }
   }
 });

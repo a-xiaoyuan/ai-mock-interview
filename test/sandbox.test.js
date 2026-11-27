@@ -8,6 +8,7 @@ const { spawn } = require('child_process');
 
 const {
   DEFAULT_IMAGE,
+  FALLBACK_USER,
   containerEnv,
   containerRunArgs,
   containerUser,
@@ -134,7 +135,9 @@ describe('容器沙箱', { concurrency: 1 }, () => {
         env: containerEnv(),
         runtime: 'podman',
       });
-      assert.equal(podmanArgs[podmanArgs.indexOf('--userns') + 1], 'keep-id');
+      // 取得到宿主 uid（Linux / macOS）时才需要 keep-id；Windows 上没有 uid，用镜像里的非 root 用户，不加 --userns
+      if (user === FALLBACK_USER) assert.equal(podmanArgs.includes('--userns'), false);
+      else assert.equal(podmanArgs[podmanArgs.indexOf('--userns') + 1], 'keep-id');
       assert.equal(podmanArgs[podmanArgs.indexOf('--user') + 1], user);
       assert.throws(
         () => containerRunArgs({ image: DEFAULT_IMAGE, name: 'miabc123', workDir: '/etc', command: 'node', commandArgs: [], env: containerEnv() }),
@@ -319,6 +322,42 @@ describe('容器沙箱', { concurrency: 1 }, () => {
     }
   });
 
+  test('接口：CODE_RUNNER=on 但代码不在容器里跑时，拒绝非本机请求，本机请求照常', { timeout: 30_000 }, async (t) => {
+    // 用本机的局域网地址发请求，服务看到的就不是 127.0.0.1
+    const lan = Object.values(os.networkInterfaces())
+      .flat()
+      .find((it) => it && it.family === 'IPv4' && !it.internal);
+    if (!lan) return t.skip('没有可用的局域网地址');
+    const marker = path.join(os.tmpdir(), `mi-remote-should-not-run-${process.pid}`);
+    fs.rmSync(marker, { force: true });
+    const port = await freePort();
+    const child = spawn(process.execPath, ['server.js'], {
+      cwd: root,
+      // CODE_SANDBOX=off 模拟 auto 回退到本机进程的情况：代码不在容器里跑
+      env: { ...process.env, PORT: String(port), LLM_API_KEY: '', CODE_RUNNER: 'on', CODE_SANDBOX: 'off' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    try {
+      await waitFor(port);
+      const remoteConfig = await request(port, 'GET', '/api/config', undefined, lan.address);
+      assert.deepEqual(remoteConfig.json.runner, []);
+      const code = `require('fs').writeFileSync(${JSON.stringify(marker)}, 'ran')`;
+      const denied = await request(port, 'POST', '/api/run', { language: 'javascript', code, stdin: '' }, lan.address);
+      assert.equal(denied.status, 500, denied.text);
+      assert.match(denied.json.error, /容器沙箱没有就绪/);
+      const judged = await request(port, 'POST', '/api/judge-code', { language: 'javascript', code, cases: [{ name: 'x', input: '', output: '' }] }, lan.address);
+      assert.equal(judged.status, 500, judged.text);
+      assert.equal(fs.existsSync(marker), false);
+      // 本机请求仍可以在本机进程里练习
+      const local = await request(port, 'POST', '/api/run', { language: 'javascript', code: 'console.log(1)', stdin: '' });
+      assert.equal(local.status, 200, local.text);
+      assert.equal(local.json.stdout.trim(), '1');
+    } finally {
+      child.kill();
+      fs.rmSync(marker, { force: true });
+    }
+  });
+
   test('容器可用时：无网络、读不到宿主机文件、写不了系统目录、五种语言可判题、超时能停', { timeout: 180_000 }, async (t) => {
     const runtime = inspectRuntime();
     const ready = !!(runtime && imageExists(runtime, DEFAULT_IMAGE));
@@ -418,12 +457,12 @@ async function withEnv(extra, fn) {
   }
 }
 
-function request(port, method, pathname, body) {
+function request(port, method, pathname, body, hostname = '127.0.0.1') {
   return new Promise((resolve, reject) => {
     const data = body ? Buffer.from(JSON.stringify(body)) : null;
     const req = http.request(
       {
-        hostname: '127.0.0.1',
+        hostname,
         port,
         path: pathname,
         method,
