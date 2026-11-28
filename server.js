@@ -1,6 +1,7 @@
 // AI 模拟面试后端 —— 零依赖 Node 服务（Node 18+）
 // 开发：npm run dev（Vite 5173 + 本服务 3000）  生产：npm run build && npm start
 // 配置 .env（可选）：LLM_BASE_URL / LLM_API_KEY / LLM_MODEL / LLM_FAST_MODEL / PORT / CODE_RUNNER / CODE_SANDBOX
+//   云端语音（可选）：ASR_MODEL / TTS_MODEL / TTS_VOICE / ASR_LANGUAGE / SPEECH_BASE_URL / SPEECH_API_KEY，见 lib/speech.js
 // 没有配置 LLM_API_KEY 时自动进入 mock 模式，可直接体验完整流程。
 
 const http = require('http');
@@ -11,6 +12,7 @@ const runner = require('./lib/runner');
 const { normCases, mockJudgeFromCases } = require('./lib/cases');
 const { algoCatalog } = require('./lib/algo-bank');
 const { applyPreset, withMockAlgo } = require('./lib/preset');
+const speech = require('./lib/speech');
 
 // ---------- 配置 ----------
 loadEnv(path.join(__dirname, '.env'));
@@ -27,6 +29,7 @@ const CFG = {
 };
 const MOCK = !CFG.apiKey;
 const MAX_DEPTH = 3;
+const SPEECH = speech.speechConfig();
 
 function loadEnv(file) {
   if (!fs.existsSync(file)) return;
@@ -434,7 +437,25 @@ const routes = {
             error: status.error,
           }
         : null,
+      // 云端语音：开了哪个就用哪个，没开的继续用浏览器自带的
+      speech: speech.speechFeatures(SPEECH),
     };
+  },
+
+  // 云端语音识别：请求体是录音的原始字节（见 RAW_BODY），Content-Type 是录音格式
+  'POST /api/asr': async (audio, _res, req) => ({ text: await speech.transcribe(SPEECH, audio, req.headers['content-type']) }),
+
+  // 云端语音合成：返回 mp3 音频流
+  'POST /api/tts': async (b, res) => {
+    const upstream = await speech.synthesize(SPEECH, b.text);
+    res.writeHead(200, { 'Content-Type': upstream.headers.get('content-type') || 'audio/mpeg', 'Cache-Control': 'no-store' });
+    const reader = upstream.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(Buffer.from(value));
+    }
+    res.end();
   },
 
   'POST /api/run': async (b, _res, req) => {
@@ -589,20 +610,28 @@ function serveStatic(url, res) {
   fs.createReadStream(file).pipe(res);
 }
 
-function readBody(req) {
+/** 这些接口的请求体是原始字节（录音），不按 JSON 解析 */
+const RAW_BODY = { 'POST /api/asr': speech.MAX_AUDIO_BYTES };
+
+function readRaw(req, limit) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
     req.on('data', (c) => {
       size += c.length;
-      if (size > 1e6) { reject(new Error('请求体过大')); req.destroy(); }
+      if (size > limit) { reject(new Error('请求体过大')); req.destroy(); }
       else chunks.push(c);
     });
-    req.on('end', () => {
-      try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); }
-      catch { reject(new Error('JSON 格式错误')); }
-    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
   });
+}
+
+async function readBody(req) {
+  const buf = await readRaw(req, 1e6);
+  if (!buf.length) return {};
+  try { return JSON.parse(buf.toString('utf8')); }
+  catch { throw new Error('JSON 格式错误'); }
 }
 
 const server = http.createServer(async (req, res) => {
@@ -611,7 +640,8 @@ const server = http.createServer(async (req, res) => {
   const handler = routes[`${req.method} ${url.pathname}`];
   if (!handler) { res.writeHead(404); return res.end('Not found'); }
   try {
-    const body = req.method === 'POST' ? await readBody(req) : {};
+    const rawLimit = RAW_BODY[`${req.method} ${url.pathname}`];
+    const body = req.method !== 'POST' ? {} : rawLimit ? await readRaw(req, rawLimit) : await readBody(req);
     const out = await handler(body, res, req);
     if (!res.headersSent) {
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -630,6 +660,11 @@ server.listen(CFG.port, () => {
   console.log(`AI 模拟面试服务已启动：http://localhost:${CFG.port}`);
   if (!fs.existsSync(path.join(DIST, 'index.html'))) console.log('（dist/ 不存在：开发请访问 Vite 的 http://localhost:5173，或先 npm run build）');
   console.log(MOCK ? '当前为 mock 模式（未配置 LLM_API_KEY）' : `模型：${CFG.model} @ ${CFG.baseUrl}`);
+  const sf = speech.speechFeatures(SPEECH);
+  if (sf.asr || sf.tts) {
+    const parts = [sf.asr && `识别 ${SPEECH.asrModel}`, sf.tts && `合成 ${SPEECH.ttsModel}`].filter(Boolean);
+    console.log(`云端语音：${parts.join('，')} @ ${SPEECH.baseUrl}`);
+  }
   if (CFG.codeRunner !== 'off') {
     const status = runner.sandboxStatus();
     const langs = runner.detectLanguages().map((l) => l.name);

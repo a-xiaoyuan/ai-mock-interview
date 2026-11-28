@@ -103,6 +103,7 @@ export default function App() {
             onDone={onDone}
             runners={server?.runner ?? []}
             runnerNote={server?.sandbox?.error || undefined}
+            speech={server?.speech}
           />
         )}
         {view.name === 'report' && <ReportPage record={view.record} onAgain={goHome} onPractice={startPractice} />}

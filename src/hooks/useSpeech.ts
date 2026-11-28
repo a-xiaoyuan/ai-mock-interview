@@ -1,6 +1,9 @@
-// 语音面试：用浏览器自带的语音合成朗读面试官的话，用语音识别把说的话转成文字。
-// 不需要额外依赖，也不经过本项目的服务端。浏览器不支持时，界面退回到打字作答。
+// 语音面试：朗读面试官的话，把说的话转成文字。
+// 默认用浏览器自带的语音合成和识别，不经过本项目的服务端；
+// 服务端配置了云端语音（ASR_MODEL / TTS_MODEL）时改用云端，录音和要朗读的文字会发给配置的语音服务。
+// 都不可用时，界面退回到打字作答。
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { synthesizeSpeech, transcribeAudio } from '../api';
 
 const SPEAK_KEY = 'mock-interview-speak';
 
@@ -22,14 +25,33 @@ function splitSentences(text: string): string[] {
   return (text.match(/[^。！？!?；;\n]+[。！？!?；;]?/g) ?? [text]).map((s) => s.trim()).filter(Boolean);
 }
 
-export function useSpeaker() {
-  const supported = typeof window !== 'undefined' && 'speechSynthesis' in window;
+/** 云端朗读的文字上限，和服务端 MAX_TTS_CHARS 一致 */
+const MAX_TTS_CHARS = 1000;
+
+/** cloud：服务端配置了云端语音合成。云端失败时退回浏览器自带的朗读 */
+export function useSpeaker(cloud = false) {
+  const native = typeof window !== 'undefined' && 'speechSynthesis' in window;
+  const supported = cloud || native;
   const [enabled, setEnabled] = useState(() => supported && localStorage.getItem(SPEAK_KEY) === '1');
   const [speaking, setSpeaking] = useState(false);
   const voice = useRef<SpeechSynthesisVoice | null>(null);
+  // 云端朗读：正在请求的合成和正在播放的音频
+  const pending = useRef<AbortController | null>(null);
+  const audio = useRef<HTMLAudioElement | null>(null);
+
+  const stopCloud = useCallback(() => {
+    pending.current?.abort();
+    pending.current = null;
+    if (audio.current) {
+      audio.current.onended = audio.current.onerror = null;
+      audio.current.pause();
+      URL.revokeObjectURL(audio.current.src);
+      audio.current = null;
+    }
+  }, []);
 
   useEffect(() => {
-    if (!supported) return;
+    if (!native) return stopCloud;
     const load = () => {
       voice.current = pickVoice();
     };
@@ -38,19 +60,19 @@ export function useSpeaker() {
     return () => {
       window.speechSynthesis.removeEventListener('voiceschanged', load);
       window.speechSynthesis.cancel();
+      stopCloud();
     };
-  }, [supported]);
+  }, [native, stopCloud]);
 
   const stop = useCallback(() => {
-    if (!supported) return;
-    window.speechSynthesis.cancel();
+    stopCloud();
+    if (native) window.speechSynthesis.cancel();
     setSpeaking(false);
-  }, [supported]);
+  }, [native, stopCloud]);
 
-  /** force：开关关闭时也读（用于“重读这一句”） */
-  const speak = useCallback(
-    (text: string, force = false) => {
-      if (!supported || (!enabled && !force) || !text.trim()) return;
+  const speakNative = useCallback(
+    (text: string) => {
+      if (!native) return setSpeaking(false);
       const synth = window.speechSynthesis;
       synth.cancel();
       const parts = splitSentences(text);
@@ -67,18 +89,61 @@ export function useSpeaker() {
         synth.speak(u);
       });
     },
-    [supported, enabled],
+    [native],
   );
 
+  const speakCloud = useCallback(
+    async (text: string) => {
+      const ctrl = new AbortController();
+      pending.current = ctrl;
+      setSpeaking(true);
+      let a: HTMLAudioElement | null = null;
+      try {
+        const blob = await synthesizeSpeech(text.slice(0, MAX_TTS_CHARS), ctrl.signal);
+        if (pending.current !== ctrl) return; // 已经停止或换了一句
+        pending.current = null;
+        a = new Audio(URL.createObjectURL(blob));
+        audio.current = a;
+        const done = () => {
+          if (!a || audio.current !== a) return;
+          URL.revokeObjectURL(a.src);
+          audio.current = null;
+          setSpeaking(false);
+        };
+        a.onended = done;
+        a.onerror = done;
+        await a.play();
+      } catch (e) {
+        // 中途被停止或换了一句：什么都不做
+        if (ctrl.signal.aborted || (a && audio.current !== a)) return;
+        // 云端合成失败或浏览器不让自动播放：这一句改用浏览器自带的朗读
+        console.warn('云端朗读失败，改用浏览器朗读：', e);
+        stopCloud();
+        speakNative(text);
+      }
+    },
+    [speakNative, stopCloud],
+  );
+
+  /** force：开关关闭时也读（用于“重读这一句”） */
+  const speak = useCallback(
+    (text: string, force = false) => {
+      if (!supported || (!enabled && !force) || !text.trim()) return;
+      stopCloud();
+      if (native) window.speechSynthesis.cancel();
+      if (cloud) void speakCloud(text);
+      else speakNative(text);
+    },
+    [supported, enabled, cloud, native, speakCloud, speakNative, stopCloud],
+  );
+
+  // 打开时不打断：调用方可能刚用 force 读了一句试音
   const toggle = useCallback(() => {
-    setEnabled((on) => {
-      const next = !on;
-      localStorage.setItem(SPEAK_KEY, next ? '1' : '0');
-      if (!next) window.speechSynthesis.cancel();
-      return next;
-    });
-    setSpeaking(false);
-  }, []);
+    const next = !enabled;
+    localStorage.setItem(SPEAK_KEY, next ? '1' : '0');
+    setEnabled(next);
+    if (!next) stop();
+  }, [enabled, stop]);
 
   return { supported, enabled, speaking, speak, stop, toggle };
 }
@@ -121,19 +186,152 @@ const ERRORS: Record<string, string> = {
   'language-not-supported': '浏览器的语音识别不支持中文，可以直接打字作答。',
 };
 
-/** 语音输入：识别出的整句通过 onFinal 交给调用方，还没说完的部分放在 interim 里实时显示 */
-export function useDictation(onFinal: (text: string) => void) {
+/** 录音格式：优先 opus，Safari 只支持 mp4 */
+function pickRecordMime(): string {
+  const all = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+  return all.find((m) => MediaRecorder.isTypeSupported?.(m)) ?? '';
+}
+
+/** 一次录音最长时间，到了自动结束并识别；和服务端的大小上限相比留足余量 */
+const MAX_RECORD_MS = 5 * 60_000;
+
+const fmtTime = (ms: number) => `${Math.floor(ms / 60_000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
+
+function micError(e: unknown): string {
+  const name = e instanceof DOMException ? e.name : '';
+  if (name === 'NotAllowedError' || name === 'SecurityError') return ERRORS['not-allowed'];
+  if (name === 'NotFoundError' || name === 'NotReadableError') return ERRORS['audio-capture'];
+  return `无法开始录音：${e instanceof Error ? e.message : String(e)}`;
+}
+
+/**
+ * 语音输入：识别出的整句通过 onFinal 交给调用方，还没说完的部分放在 interim 里实时显示。
+ * cloud：服务端配置了云端语音识别。这时改成录音，点结束后整段上传识别；interim 显示录音时长和识别进度。
+ */
+export function useDictation(onFinal: (text: string) => void, cloud = false) {
   const Ctor = getRecognition();
+  const canRecord = typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined';
   const [listening, setListening] = useState(false);
+  /** 云端识别：录音已结束，正在等识别结果 */
+  const [transcribing, setTranscribing] = useState(false);
   const [interim, setInterim] = useState('');
   const [error, setError] = useState('');
   const rec = useRef<Recognition | null>(null);
   const onFinalRef = useRef(onFinal);
   onFinalRef.current = onFinal;
 
-  useEffect(() => () => rec.current?.abort(), []);
+  // 云端识别用到的录音状态
+  const recorder = useRef<MediaRecorder | null>(null);
+  const upload = useRef<AbortController | null>(null);
+  const timers = useRef<number[]>([]);
+  /** 每次开始或取消录音加一；等麦克风权限时被取消，回来后据此放弃 */
+  const gen = useRef(0);
+  const starting = useRef(false);
+  const clearTimers = () => {
+    timers.current.forEach((t) => clearInterval(t));
+    timers.current = [];
+  };
+
+  /** 停掉录音和上传，不交出结果 */
+  const dropCloud = useCallback(() => {
+    gen.current++;
+    starting.current = false;
+    clearTimers();
+    const r = recorder.current;
+    recorder.current = null;
+    if (r) {
+      r.ondataavailable = r.onstop = null;
+      if (r.state !== 'inactive') r.stop();
+      r.stream.getTracks().forEach((t) => t.stop());
+    }
+    upload.current?.abort();
+    upload.current = null;
+  }, []);
+
+  useEffect(
+    () => () => {
+      rec.current?.abort();
+      dropCloud();
+    },
+    [dropCloud],
+  );
+
+  const startCloud = useCallback(async () => {
+    if (recorder.current || upload.current || starting.current) return;
+    setError('');
+    const my = ++gen.current;
+    starting.current = true;
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    } catch (e) {
+      if (gen.current === my) {
+        starting.current = false;
+        setError(micError(e));
+      }
+      return;
+    }
+    if (gen.current !== my) return stream.getTracks().forEach((t) => t.stop()); // 等权限时已取消
+    starting.current = false;
+    const mime = pickRecordMime();
+    let r: MediaRecorder;
+    try {
+      r = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+    } catch (e) {
+      stream.getTracks().forEach((t) => t.stop());
+      return setError(micError(e));
+    }
+    const chunks: Blob[] = [];
+    r.ondataavailable = (e) => {
+      if (e.data.size) chunks.push(e.data);
+    };
+    r.onstop = async () => {
+      clearTimers();
+      stream.getTracks().forEach((t) => t.stop());
+      if (recorder.current !== r) return; // 被取消
+      recorder.current = null;
+      setListening(false);
+      const blob = new Blob(chunks, { type: (r.mimeType || mime || 'audio/webm').split(';')[0] });
+      if (!blob.size) {
+        setInterim('');
+        return setError('没有录到声音，请检查麦克风后再试，或者直接打字作答。');
+      }
+      const ctrl = new AbortController();
+      upload.current = ctrl;
+      setTranscribing(true);
+      setInterim('正在识别…');
+      try {
+        const text = (await transcribeAudio(blob, ctrl.signal)).trim();
+        if (upload.current !== ctrl) return;
+        if (text) onFinalRef.current(text);
+        else setError('没有识别出内容，可以再说一次，或者直接打字作答。');
+      } catch (e) {
+        if (upload.current !== ctrl) return;
+        setError(`${e instanceof Error ? e.message : String(e)}。可以再试一次，或者直接打字作答。`);
+      } finally {
+        if (upload.current === ctrl) {
+          upload.current = null;
+          setTranscribing(false);
+          setInterim('');
+        }
+      }
+    };
+    recorder.current = r;
+    r.start(1000);
+    const began = Date.now();
+    setListening(true);
+    setInterim(`录音中 ${fmtTime(0)}`);
+    timers.current.push(
+      window.setInterval(() => {
+        const ms = Date.now() - began;
+        setInterim(`录音中 ${fmtTime(ms)}`);
+        if (ms >= MAX_RECORD_MS && r.state === 'recording') r.stop();
+      }, 500),
+    );
+  }, []);
 
   const start = useCallback(() => {
+    if (cloud) return void startCloud();
     if (!Ctor || rec.current) return;
     setError('');
     const r = new Ctor();
@@ -167,10 +365,14 @@ export function useDictation(onFinal: (text: string) => void) {
       rec.current = null;
       setError(`无法开始语音识别：${e instanceof Error ? e.message : String(e)}`);
     }
-  }, [Ctor]);
+  }, [Ctor, cloud, startCloud]);
 
-  /** 说完了：把最后一句识别完再结束 */
-  const stop = useCallback(() => rec.current?.stop(), []);
+  /** 说完了：把最后一句识别完再结束（云端识别：结束录音并上传） */
+  const stop = useCallback(() => {
+    const r = recorder.current;
+    if (r && r.state === 'recording') r.stop();
+    rec.current?.stop();
+  }, []);
   /** 丢掉还没识别完的部分，立刻结束（例如已经发送了回答） */
   const cancel = useCallback(() => {
     if (rec.current) {
@@ -178,9 +380,23 @@ export function useDictation(onFinal: (text: string) => void) {
       rec.current.abort();
     }
     rec.current = null;
+    dropCloud();
     setListening(false);
+    setTranscribing(false);
     setInterim('');
-  }, []);
+  }, [dropCloud]);
 
-  return { supported: !!Ctor, listening, interim, error, start, stop, cancel, clearError: () => setError('') };
+  return {
+    supported: cloud ? canRecord : !!Ctor,
+    /** 识别发生在哪：云端时录音会上传给配置的语音服务 */
+    cloud,
+    listening,
+    transcribing,
+    interim,
+    error,
+    start,
+    stop,
+    cancel,
+    clearError: () => setError(''),
+  };
 }

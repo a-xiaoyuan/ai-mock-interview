@@ -140,6 +140,8 @@ export interface ServerConfig {
   runner?: RunnerLanguage[];
   /** 运行接口不可用时为 null */
   sandbox?: SandboxStatus | null;
+  /** 服务端配置了云端语音识别 / 合成；没配置的那一项继续用浏览器自带的 */
+  speech?: { asr: boolean; tts: boolean };
 }
 
 export type LanguageId = 'javascript' | 'python' | 'java' | 'cpp' | 'go';

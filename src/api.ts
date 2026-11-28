@@ -14,6 +14,24 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
 
 export const getConfig = () => request<ServerConfig>('/api/config');
 
+/** 云端语音识别：上传一段录音，返回识别出的文字 */
+export async function transcribeAudio(audio: Blob, signal?: AbortSignal): Promise<string> {
+  const res = await fetch('/api/asr', { method: 'POST', headers: { 'Content-Type': audio.type || 'audio/webm' }, body: audio, signal });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return String(data.text ?? '');
+}
+
+/** 云端语音合成：返回一段音频 */
+export async function synthesizeSpeech(text: string, signal?: AbortSignal): Promise<Blob> {
+  const res = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }), signal });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || res.statusText);
+  }
+  return res.blob();
+}
+
 /** 生成面试大纲；开启题库时带上同岗位的面经题，由模型挑选 */
 export function createPlan(config: InterviewConfig) {
   const bank = config.useBank === false ? [] : bankPoolFor(config.role);
