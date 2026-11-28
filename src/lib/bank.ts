@@ -3,6 +3,7 @@ import type { BankItem, Question } from '../types';
 
 const KEY = 'mock-interview-bank';
 const LIMIT = 500;
+export const BANK_LIMIT = LIMIT;
 /** 一次出题最多带多少道题库题给模型，太多会拖慢出题 */
 const PLAN_POOL = 30;
 /** 两道题的字符二元组重合度超过这个值，就当作同一道题 */
@@ -16,6 +17,9 @@ export function loadBank(): BankItem[] {
     return [];
   }
 }
+
+/** 整体替换（导入备份时用） */
+export const replaceBank = (items: BankItem[]) => saveBank(items);
 
 function saveBank(items: BankItem[]) {
   localStorage.setItem(KEY, JSON.stringify(items.slice(0, LIMIT)));

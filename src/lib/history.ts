@@ -2,6 +2,7 @@ import type { InterviewRecord } from '../types';
 
 const KEY = 'mock-interview-history';
 const LIMIT = 30;
+export const HISTORY_LIMIT = LIMIT;
 
 export function loadHistory(): InterviewRecord[] {
   try {
@@ -10,6 +11,11 @@ export function loadHistory(): InterviewRecord[] {
   } catch {
     return [];
   }
+}
+
+/** 整体替换（导入备份时用），调用方负责排序和去重 */
+export function replaceHistory(records: InterviewRecord[]) {
+  localStorage.setItem(KEY, JSON.stringify(records.slice(0, LIMIT)));
 }
 
 export function saveRecord(record: InterviewRecord) {

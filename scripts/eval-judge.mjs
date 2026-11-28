@@ -66,12 +66,23 @@ const pad = (s, n) => {
   return String(s) + ' '.repeat(Math.max(0, n - w));
 };
 
+// 服务设置了 ACCESS_TOKEN 时，用同一个口令调用接口
+const AUTH = process.env.ACCESS_TOKEN ? { Authorization: `Bearer ${process.env.ACCESS_TOKEN}` } : {};
+
 async function judge(q, chain, depth) {
-  const res = await fetch(`${BASE}/api/judge`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ q, chain, depth, pack: PACK }),
-  });
+  let res;
+  for (let attempt = 0; ; attempt++) {
+    res = await fetch(`${BASE}/api/judge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...AUTH },
+      body: JSON.stringify({ q, chain, depth, pack: PACK }),
+    });
+    // 被限流（RATE_LIMIT）时按服务给的时间等一会儿再试
+    if (res.status !== 429 || attempt >= 5) break;
+    const wait = Number(res.headers.get('retry-after')) || 10;
+    console.warn(`  被限流，${wait} 秒后重试…`);
+    await new Promise((r) => setTimeout(r, wait * 1000));
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;
@@ -114,13 +125,14 @@ async function main() {
 
   let config;
   try {
-    config = await (await fetch(`${BASE}/api/config`)).json();
+    config = await (await fetch(`${BASE}/api/config`, { headers: AUTH })).json();
   } catch {
     throw new Error(`连不上 ${BASE}，请先启动服务（npm start 或 npm run dev）`);
   }
+  if (config.auth && !config.auth.ok) throw new Error('服务设置了访问口令：请用同一个 ACCESS_TOKEN 运行，例如 ACCESS_TOKEN=口令 npm run eval');
   if (config.mock) console.warn('⚠ 服务处于 mock 模式（按回答长度打分），结果没有参考意义。请先在 .env 配置模型。\n');
   if (PACK) {
-    const packs = await (await fetch(`${BASE}/api/packs`)).json();
+    const packs = await (await fetch(`${BASE}/api/packs`, { headers: AUTH })).json();
     if (!packs.some((p) => p.id === PACK)) throw new Error(`服务端没有题包 ${PACK}（可用：${packs.map((p) => p.id).join('、') || '无'}）`);
   }
   console.log(`模型：${config.model}  用例：${cases.length} 个 × ${RUNS} 次  并发：${CONCURRENCY}${PACK ? `  题包：${PACK}` : ''}\n`);

@@ -111,7 +111,7 @@ test('接口：/api/config 报告开关，/api/asr 收原始录音，/api/tts �
   const port = await freePort();
   const child = spawn(process.execPath, ['server.js'], {
     cwd: root,
-    env: { ...process.env, PORT: String(port), LLM_API_KEY: '', SPEECH_BASE_URL: fake.url, SPEECH_API_KEY: KEY, ASR_MODEL: 'asr-x', TTS_MODEL: 'tts-x', TTS_VOICE: '', ASR_LANGUAGE: '' },
+    env: { ...process.env, PORT: String(port), LLM_API_KEY: '', ACCESS_TOKEN: '', SPEECH_BASE_URL: fake.url, SPEECH_API_KEY: KEY, ASR_MODEL: 'asr-x', TTS_MODEL: 'tts-x', TTS_VOICE: '', ASR_LANGUAGE: '' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   try {
@@ -144,7 +144,7 @@ test('接口：没配置云端语音时开关为关，调用接口直接报错',
   const port = await freePort();
   const child = spawn(process.execPath, ['server.js'], {
     cwd: root,
-    env: { ...process.env, PORT: String(port), LLM_API_KEY: '', SPEECH_API_KEY: '', ASR_MODEL: '', TTS_MODEL: '' },
+    env: { ...process.env, PORT: String(port), LLM_API_KEY: '', ACCESS_TOKEN: '', SPEECH_API_KEY: '', ASR_MODEL: '', TTS_MODEL: '' },
     stdio: 'ignore',
   });
   try {

@@ -5,6 +5,7 @@ import { loadBank } from '../lib/bank';
 import { loadHistory } from '../lib/history';
 import { ACCEPTED_RESUME_TYPES, ResumeFileError, readResumeFile, type ResumeProgress } from '../lib/resumeFile';
 import type { InterviewConfig, InterviewRecord, PackSummary, Plan } from '../types';
+import { BackupCard } from './BackupCard';
 import { FileReadProgress, parsingLabel } from './FileReadProgress';
 import { GrowthPanel } from './GrowthPanel';
 import { Icon, type IconName } from './Icon';
@@ -72,7 +73,9 @@ export function SetupPage({ initial, onStart, onPractice, onChange, onOpenBank, 
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [history] = useState(loadHistory);
+  const [history, setHistory] = useState(loadHistory);
+  /** 导入备份后加一，让题库数量重新计算 */
+  const [dataVersion, setDataVersion] = useState(0);
   const [packs, setPacks] = useState<PackSummary[]>([]);
   useEffect(() => {
     getPacks()
@@ -96,7 +99,7 @@ export function SetupPage({ initial, onStart, onPractice, onChange, onOpenBank, 
       : packSel === 'auto'
         ? packs.find((p) => p.roles.includes(config.role) && (!p.levels.length || p.levels.includes(config.level))) ?? null
         : packs.find((p) => p.id === packSel) ?? null;
-  const bankCount = useMemo(() => loadBank().filter((it) => !it.role || it.role === config.role).length, [config.role]);
+  const bankCount = useMemo(() => loadBank().filter((it) => !it.role || it.role === config.role).length, [config.role, dataVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const set = <K extends keyof InterviewConfig>(key: K, value: InterviewConfig[K]) => setConfig((c) => ({ ...c, [key]: value }));
 
@@ -355,6 +358,12 @@ export function SetupPage({ initial, onStart, onPractice, onChange, onOpenBank, 
               </ol>
             </section>
           )}
+          <BackupCard
+            onImported={() => {
+              setHistory(loadHistory());
+              setDataVersion((v) => v + 1);
+            }}
+          />
         </aside>
       </div>
     </>

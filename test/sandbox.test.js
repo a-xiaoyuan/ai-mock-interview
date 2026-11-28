@@ -266,7 +266,7 @@ describe('容器沙箱', { concurrency: 1 }, () => {
       env: {
         ...process.env,
         PORT: String(port),
-        LLM_API_KEY: '',
+        LLM_API_KEY: '', ACCESS_TOKEN: '',
         CODE_RUNNER: 'local',
         CODE_SANDBOX: 'on',
         // 非法镜像名在任何机器上都会让 on 失败，用来钉住接口不会悄悄改回本机
@@ -302,7 +302,7 @@ describe('容器沙箱', { concurrency: 1 }, () => {
           env: {
             ...process.env,
             PORT: String(runtimePort),
-            LLM_API_KEY: '',
+            LLM_API_KEY: '', ACCESS_TOKEN: '',
             CODE_RUNNER: 'local',
             CODE_SANDBOX: 'on',
             CODE_SANDBOX_IMAGE: '',
@@ -334,7 +334,7 @@ describe('容器沙箱', { concurrency: 1 }, () => {
     const child = spawn(process.execPath, ['server.js'], {
       cwd: root,
       // CODE_SANDBOX=off 模拟 auto 回退到本机进程的情况：代码不在容器里跑
-      env: { ...process.env, PORT: String(port), LLM_API_KEY: '', CODE_RUNNER: 'on', CODE_SANDBOX: 'off' },
+      env: { ...process.env, PORT: String(port), LLM_API_KEY: '', ACCESS_TOKEN: '', CODE_RUNNER: 'on', CODE_SANDBOX: 'off' },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     try {

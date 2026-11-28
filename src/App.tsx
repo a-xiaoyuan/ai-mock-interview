@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { createPlan, getConfig } from './api';
+import { AUTH_EVENT, createPlan, getConfig, logout } from './api';
 import { BankPage } from './components/BankPage';
 import { Icon, LogoMark } from './components/Icon';
 import { InterviewPage } from './components/InterviewPage';
+import { LoginPage } from './components/LoginPage';
 import type { StartPractice } from './components/PracticeButton';
 import { ReportPage } from './components/ReportPage';
 import { SetupPage } from './components/SetupPage';
@@ -23,11 +24,33 @@ export default function App() {
   /** 首页正在填写的设置（简历、JD 等），离开首页再回来、以及专项练习时沿用；不需要触发重新渲染 */
   const lastConfig = useRef<InterviewConfig | null>(null);
 
-  useEffect(() => {
+  const loadConfig = () =>
     getConfig()
-      .then(setServer)
+      .then((c) => {
+        setServer(c);
+        setServerError(false);
+      })
       .catch(() => setServerError(true));
+
+  useEffect(() => {
+    loadConfig();
+    // 任何接口返回 401（登录过期、口令换了）都回到登录界面；正在进行的面试留在下面，登录后接着答
+    const onAuth = () => setServer((s) => ({ ...(s ?? { mock: false, model: '' }), auth: { required: true, ok: false } }));
+    window.addEventListener(AUTH_EVENT, onAuth);
+    return () => window.removeEventListener(AUTH_EVENT, onAuth);
   }, []);
+  const needLogin = !!server?.auth?.required && !server.auth.ok;
+  // 页面内容等确认能访问（或服务连不上）再渲染，免得首页的请求先吃到 401；
+  // 登录过一次之后再过期，页面留着，登录后接着用
+  const everIn = useRef(false);
+  if (server && !needLogin) everIn.current = true;
+  const showMain = serverError || everIn.current;
+
+  async function signOut() {
+    if (view.name === 'interview' && !confirm('面试还没结束，退出登录后需要重新输入口令才能继续。确定退出？')) return;
+    await logout().catch(() => {});
+    loadConfig();
+  }
 
   /** 面试进行中离开要先确认 */
   function go(next: View) {
@@ -73,7 +96,12 @@ export default function App() {
           </button>
         </nav>
         <span className="spacer" />
-        <ModeBadge server={server} error={serverError} />
+        {!needLogin && <ModeBadge server={server} error={serverError} />}
+        {server?.auth?.required && server.auth.ok && (
+          <button className="sm ghost icon-btn" onClick={signOut} aria-label="退出登录" title="退出登录">
+            <Icon name="logout" />
+          </button>
+        )}
         {(view.name === 'interview' || view.name === 'report') && (
           <button className="sm ghost back" onClick={goHome}>
             <Icon name="arrowLeft" />
@@ -82,7 +110,7 @@ export default function App() {
         )}
       </header>
       <main>
-        {view.name === 'setup' && (
+        {showMain && view.name === 'setup' && (
           <SetupPage
             initial={lastConfig.current}
             onChange={(c) => {
@@ -108,6 +136,11 @@ export default function App() {
         )}
         {view.name === 'report' && <ReportPage record={view.record} onAgain={goHome} onPractice={startPractice} />}
       </main>
+      {needLogin && (
+        <div className="login-overlay">
+          <LoginPage onDone={loadConfig} />
+        </div>
+      )}
     </>
   );
 }

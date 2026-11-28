@@ -420,7 +420,7 @@ test('接口：大纲带上预置用例，提交后能判题，关闭运行器�
   const port = 20000 + Math.floor(Math.random() * 20000);
   const child = spawn(process.execPath, ['server.js'], {
     cwd: root,
-    env: { ...process.env, PORT: String(port), LLM_API_KEY: '', CODE_RUNNER: 'local', CODE_SANDBOX: 'auto' },
+    env: { ...process.env, PORT: String(port), LLM_API_KEY: '', ACCESS_TOKEN: '', CODE_RUNNER: 'local', CODE_SANDBOX: 'auto' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let logs = '';
@@ -472,7 +472,7 @@ test('接口：大纲带上预置用例，提交后能判题，关闭运行器�
   const offPort = port + 1;
   const off = spawn(process.execPath, ['server.js'], {
     cwd: root,
-    env: { ...process.env, PORT: String(offPort), LLM_API_KEY: '', CODE_RUNNER: 'off' },
+    env: { ...process.env, PORT: String(offPort), LLM_API_KEY: '', ACCESS_TOKEN: '', CODE_RUNNER: 'off' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   try {

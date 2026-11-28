@@ -142,6 +142,8 @@ export interface ServerConfig {
   sandbox?: SandboxStatus | null;
   /** 服务端配置了云端语音识别 / 合成；没配置的那一项继续用浏览器自带的 */
   speech?: { asr: boolean; tts: boolean };
+  /** 服务端设置了访问口令（ACCESS_TOKEN）时 required 为 true；ok 表示这个浏览器已经登录 */
+  auth?: { required: boolean; ok: boolean };
 }
 
 export type LanguageId = 'javascript' | 'python' | 'java' | 'cpp' | 'go';

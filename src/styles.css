@@ -583,3 +583,19 @@ main:has(.interview.coding) { max-width: 1480px; }
 @media (max-width: 640px) {
   .camera-actions .sm { flex: 1 1 auto; }
 }
+
+/* ---------- 访问口令 ---------- */
+.login-overlay { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px; background: var(--bg); overflow-y: auto; }
+.login-card { width: min(380px, 100%); padding: 28px; display: flex; flex-direction: column; gap: 14px; }
+.login-card h1 { font-size: 20px; font-weight: 650; margin: 4px 0 0; }
+.login-card p { margin: 0; line-height: 1.6; }
+.login-card .field { margin: 4px 0 0; }
+.login-card input { width: 100%; }
+.login-card .error-box { margin: 0; }
+.login-card button.primary { justify-content: center; }
+
+/* ---------- 数据备份 ---------- */
+.backup p { margin: 0 0 12px; line-height: 1.6; }
+.backup .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.backup .result { margin-top: 10px; line-height: 1.6; }
+.error-text { color: var(--bad); }

@@ -1,6 +1,7 @@
 // AI 模拟面试后端 —— 零依赖 Node 服务（Node 18+）
 // 开发：npm run dev（Vite 5173 + 本服务 3000）  生产：npm run build && npm start
-// 配置 .env（可选）：LLM_BASE_URL / LLM_API_KEY / LLM_MODEL / LLM_FAST_MODEL / PORT / CODE_RUNNER / CODE_SANDBOX
+// 配置 .env（可选）：LLM_BASE_URL / LLM_API_KEY / LLM_MODEL / LLM_FAST_MODEL / PORT / HOST / CODE_RUNNER / CODE_SANDBOX
+//   访问控制（可选）：ACCESS_TOKEN / RATE_LIMIT / TRUST_PROXY，见 lib/guard.js
 //   云端语音（可选）：ASR_MODEL / TTS_MODEL / TTS_VOICE / ASR_LANGUAGE / SPEECH_BASE_URL / SPEECH_API_KEY，见 lib/speech.js
 // 没有配置 LLM_API_KEY 时自动进入 mock 模式，可直接体验完整流程。
 
@@ -13,11 +14,14 @@ const { normCases, mockJudgeFromCases } = require('./lib/cases');
 const { algoCatalog } = require('./lib/algo-bank');
 const { applyPreset, withMockAlgo } = require('./lib/preset');
 const speech = require('./lib/speech');
+const guard = require('./lib/guard');
 
 // ---------- 配置 ----------
 loadEnv(path.join(__dirname, '.env'));
 const CFG = {
   port: Number(process.env.PORT || 3000),
+  // 只想本机访问时设为 127.0.0.1；不填则监听所有网卡
+  host: process.env.HOST || undefined,
   baseUrl: (process.env.LLM_BASE_URL || 'https://api.deepseek.com/v1').replace(/\/+$/, ''),
   apiKey: process.env.LLM_API_KEY || '',
   model: process.env.LLM_MODEL || 'deepseek-chat',
@@ -30,6 +34,7 @@ const CFG = {
 const MOCK = !CFG.apiKey;
 const MAX_DEPTH = 3;
 const SPEECH = speech.speechConfig();
+const GUARD = guard.createGuard(guard.guardConfig());
 
 function loadEnv(file) {
   if (!fs.existsSync(file)) return;
@@ -421,6 +426,9 @@ async function streamText(res, text) {
 // ---------- 路由 ----------
 const routes = {
   'GET /api/config': async (_b, _res, req) => {
+    const auth = GUARD.authState(req);
+    // 没登录时只告诉前端要登录，不返回模型、运行环境等信息
+    if (!auth.ok) return { mock: false, model: '', auth };
     const allowed = runnerAllowed(req);
     const status = allowed ? runner.sandboxStatus() : null;
     return {
@@ -439,7 +447,19 @@ const routes = {
         : null,
       // 云端语音：开了哪个就用哪个，没开的继续用浏览器自带的
       speech: speech.speechFeatures(SPEECH),
+      auth,
     };
+  },
+
+  // 访问口令：成功后设置 HttpOnly Cookie
+  'POST /api/login': async (b, res, req) => {
+    const cookie = GUARD.login(req, b.token);
+    if (cookie) res.setHeader('Set-Cookie', cookie);
+    return { ok: true };
+  },
+  'POST /api/logout': async (_b, res) => {
+    res.setHeader('Set-Cookie', GUARD.logoutCookie());
+    return { ok: true };
   },
 
   // 云端语音识别：请求体是录音的原始字节（见 RAW_BODY），Content-Type 是录音格式
@@ -636,9 +656,19 @@ async function readBody(req) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
+  // 基本的安全响应头：不允许被别的站点嵌入、不猜测内容类型、跳转时不带完整地址
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'same-origin');
   if ((req.method === 'GET' || req.method === 'HEAD') && !url.pathname.startsWith('/api/')) return serveStatic(url, res);
   const handler = routes[`${req.method} ${url.pathname}`];
   if (!handler) { res.writeHead(404); return res.end('Not found'); }
+  // 访问口令和限流：在读请求体之前拦下
+  const blocked = GUARD.check(`${req.method} ${url.pathname}`, req);
+  if (blocked) {
+    res.writeHead(blocked.status, { 'Content-Type': 'application/json; charset=utf-8', ...blocked.headers });
+    return res.end(JSON.stringify({ error: blocked.error }));
+  }
   try {
     const rawLimit = RAW_BODY[`${req.method} ${url.pathname}`];
     const body = req.method !== 'POST' ? {} : rawLimit ? await readRaw(req, rawLimit) : await readBody(req);
@@ -650,20 +680,27 @@ const server = http.createServer(async (req, res) => {
   } catch (err) {
     console.error(`[${url.pathname}]`, err.message);
     if (!res.headersSent) {
-      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.writeHead(err.status || 500, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: err.message }));
     } else res.end(`\n[出错了：${err.message}]`);
   }
 });
 
-server.listen(CFG.port, () => {
-  console.log(`AI 模拟面试服务已启动：http://localhost:${CFG.port}`);
+server.listen(CFG.port, CFG.host, () => {
+  console.log(`AI 模拟面试服务已启动：http://${CFG.host && CFG.host !== '0.0.0.0' ? CFG.host : 'localhost'}:${CFG.port}`);
   if (!fs.existsSync(path.join(DIST, 'index.html'))) console.log('（dist/ 不存在：开发请访问 Vite 的 http://localhost:5173，或先 npm run build）');
   console.log(MOCK ? '当前为 mock 模式（未配置 LLM_API_KEY）' : `模型：${CFG.model} @ ${CFG.baseUrl}`);
   const sf = speech.speechFeatures(SPEECH);
   if (sf.asr || sf.tts) {
     const parts = [sf.asr && `识别 ${SPEECH.asrModel}`, sf.tts && `合成 ${SPEECH.ttsModel}`].filter(Boolean);
     console.log(`云端语音：${parts.join('，')} @ ${SPEECH.baseUrl}`);
+  }
+  const g = GUARD.cfg;
+  console.log(
+    `访问控制：${g.token ? '已开启访问口令' : '没有访问口令'}；限流：${g.rateLimit ? `每个来源每分钟 ${g.rateLimit} 次` : '关闭'}${g.trustProxy ? '（按 X-Forwarded-For 区分来源）' : ''}`,
+  );
+  if (!g.token && !MOCK && CFG.host !== '127.0.0.1' && CFG.host !== 'localhost') {
+    console.log('注意：没有设置 ACCESS_TOKEN，能访问这个端口的人都能用你配置的模型额度。只在本机用可以设 HOST=127.0.0.1；要给别人用请设置 ACCESS_TOKEN。');
   }
   if (CFG.codeRunner !== 'off') {
     const status = runner.sandboxStatus();

@@ -8,9 +8,20 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || res.statusText);
+  if (!res.ok) throw apiError(res, data);
   return data as T;
 }
+
+/** 登录过期或口令换了：通知页面回到登录界面 */
+export const AUTH_EVENT = 'mock-interview-auth-required';
+
+function apiError(res: Response, data: { error?: string }) {
+  if (res.status === 401) window.dispatchEvent(new Event(AUTH_EVENT));
+  return new Error(data.error || res.statusText);
+}
+
+export const login = (token: string) => request<{ ok: boolean }>('/api/login', { token });
+export const logout = () => request<{ ok: boolean }>('/api/logout', {});
 
 export const getConfig = () => request<ServerConfig>('/api/config');
 
@@ -18,7 +29,7 @@ export const getConfig = () => request<ServerConfig>('/api/config');
 export async function transcribeAudio(audio: Blob, signal?: AbortSignal): Promise<string> {
   const res = await fetch('/api/asr', { method: 'POST', headers: { 'Content-Type': audio.type || 'audio/webm' }, body: audio, signal });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || res.statusText);
+  if (!res.ok) throw apiError(res, data);
   return String(data.text ?? '');
 }
 
@@ -27,7 +38,7 @@ export async function synthesizeSpeech(text: string, signal?: AbortSignal): Prom
   const res = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }), signal });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || res.statusText);
+    throw apiError(res, data);
   }
   return res.blob();
 }
@@ -82,7 +93,7 @@ export async function streamAsk(body: AskBody, onText: (text: string) => void): 
   });
   if (!res.ok || !res.body) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || res.statusText);
+    throw apiError(res, data);
   }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
